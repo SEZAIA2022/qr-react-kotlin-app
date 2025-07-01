@@ -1,0 +1,38 @@
+# Ignorer les fichiers Python compilés et caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignorer les dossiers virtuels Python
+venv/
+env/
+
+# Ignorer les fichiers de configuration sensibles
+*.env
+
+# Ignorer les builds et distributions
+dist/
+build/
+
+# Ignorer les dépendances Node.js
+node_modules/
+frontend/node_modules/
+venv/node_modules/
+
+# Ignorer les fichiers générés par le système
+.DS_Store
+Thumbs.db
+
+# Ignorer les fichiers IDE
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Ignorer les fichiers temporaires
+*.swp
+*~
+
+# Ignorer les fichiers spécifiques au projet
+static/__qr
+requirements.txt.bak
+package-lock.json.bak
