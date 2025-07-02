@@ -3,3 +3,4 @@ Flask-SQLAlchemy
 qrcode
 Flask-CORS
 Pillow
+vonage == 3.18.0

@@ -37,13 +37,32 @@ def send_otp_email(to_email: str, otp: str, sender_email: str, sender_password: 
         message = f"Subject: Votre code OTP\n\nVotre code OTP est : {otp}"
         server.sendmail(sender_email, to_email, message)
 
-def send_otp_sms(client: Client, to_phone_number: str, otp: str, twilio_phone_number: str):
-    message = client.messages.create(
-        body=f"Votre code OTP est : {otp}",
-        from_=twilio_phone_number,
-        to=to_phone_number
-    )
-    return message.sid
+
+import vonage
+
+def send_otp_sms(client, to_phone_number: str, otp: str, sender_name: str = "OTP"):
+    sms = vonage.Sms(client)
+    
+    response_data = sms.send_message({
+        "from": sender_name,  # peut être un numéro ou un nom court (11 caractères max)
+        "to": to_phone_number,  # ex: +33612345678
+        "text": f"Votre code OTP est : {otp}",
+    })
+
+    # Vérifie si l'envoi a réussi
+    if response_data["messages"][0]["status"] == "0":
+        return f"Message envoyé avec succès (message-id: {response_data['messages'][0]['message-id']})"
+    else:
+        return f"Erreur: {response_data['messages'][0]['error-text']}"
+
+
+# def send_otp_sms(client: Client, to_phone_number: str, otp: str, twilio_phone_number: str):
+#     message = client.messages.create(
+#         body=f"Votre code OTP est : {otp}",
+#         from_=twilio_phone_number,
+#         to=to_phone_number
+#     )
+#     return message.sid
 
 def is_email_taken(new_email):
     conn = None
@@ -66,7 +85,6 @@ def is_email_taken(new_email):
 
 # 🔍 Recherche l'utilisateur par email ou username
 def get_user_by_contact(data):
-    # Si data est une string (email ou phone seul), on le convertit en dict
     if isinstance(data, str):
         data = {"contact": data}
 
@@ -74,9 +92,8 @@ def get_user_by_contact(data):
     email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
     if contact == "":
-        return None, None
+        return None
 
-    # Vérifier si c'est un email
     if re.match(email_regex, contact):
         user = None
         try:
@@ -89,53 +106,56 @@ def get_user_by_contact(data):
                 user = {
                     'id': row[0],
                     'username': row[1],
-                    'email': row[2]
+                    'email': row[2],
+                    'contact_type': 'email'   # ajouté ici
                 }
         except Exception as e:
             print(f"Database error: {e}")
-            return {"errors": [{"message": "Database error."}]}, None
+            return {"errors": [{"message": "Database error."}]}
         finally:
             cursor.close()
             conn.close()
 
         if user:
-            return user, "email"
+            return user
 
         record = register_otp_storage.get(contact)
         if record:
             return {
                 'id': None,
                 'username': record['username'],
-                'email': record['email']
-            }, "email"
+                'email': record['email'],
+                'contact_type': 'email'
+            }
 
     else:
-        # Sinon, considérer que c'est un numéro de téléphone
         user = None
         phone_number = contact
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            query = "SELECT id, phone_number FROM users WHERE phone = %s"
+            query = "SELECT id, phone_number FROM users WHERE phone_number = %s"
             cursor.execute(query, (phone_number,))
             row = cursor.fetchone()
             if row:
                 user = {
                     'id': row[0],
-                    'phone_number': row[1]
+                    'phone_number': row[1],
+                    'contact_type': 'phone'   # ajouté ici
                 }
         except Exception as e:
             print(f"Database error: {e}")
-            return {"errors": [{"message": "Database error."}]}, None
+            return {"errors": [{"message": "Database error."}]}
         finally:
             cursor.close()
             conn.close()
 
         if user:
-            return user, "phone"
+            return user
 
-    # Aucun utilisateur trouvé
-    return None, None
+    return None
+
+
 
 
 def generate_qr_code(output_folder):

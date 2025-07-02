@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, request, jsonify, current_app
 from twilio.rest import Client
-
 from .utils import (
     generate_qr_code,
     register_otp_storage,
@@ -202,6 +201,10 @@ def verify_register():
         if cursor: cursor.close()
         if conn: conn.close()
 
+
+import vonage
+client = vonage.Client(key="VOTRE_API_KEY", secret="VOTRE_API_SECRET")
+
 @bp.route('/forgot_password', methods=['POST'])
 def forgot_password():
     data = request.get_json()
@@ -210,11 +213,11 @@ def forgot_password():
     if not contact:
         return jsonify({'status': 'error', 'message': "Email or phone is required."}), 400
 
-    user, contact_type = get_user_by_contact(contact)
-
+    user = get_user_by_contact(contact)
     if not user:
         return jsonify({'status': 'error', 'message': "User not found."}), 404
 
+    contact_type = user.get("contact_type")
     # On récupère l'email si c'est un email, sinon téléphone
     if contact_type == 'email':
         user_contact = user.get('email')
@@ -234,10 +237,10 @@ def forgot_password():
 
     try:
         if contact_type == 'email':
-            send_otp_email(user_contact, otp)
+            send_otp_email(user_contact, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
             message = "OTP sent to your email."
         else:
-            send_otp_sms(user_contact, otp)
+            send_otp_sms(client, user_contact, otp, "houss")
             message = "OTP sent to your phone."
 
         return jsonify({'status': 'success', 'message': message})
@@ -293,7 +296,6 @@ def resend_otp():
         return jsonify({'status': 'error', 'message': "Email is required."}), 400
 
     user = get_user_by_contact(email)
-
     new_otp = str(random.randint(1000, 9999))
     expires_at = datetime.utcnow() + timedelta(minutes=5)
 
@@ -319,7 +321,7 @@ def resend_otp():
             print(f"[DEBUG] OTP updated in otp_storage for {user['email']}: {otp_storage[user['email']]}")
 
     try:
-        send_otp_email(user['email'], new_otp)
+        send_otp_email(user['email'], new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
         print(f"[INFO] New OTP sent to {email}: {new_otp}")
         return jsonify({'status': 'success', 'message': "New OTP sent to your email."}), 200
     except Exception as e:
@@ -552,7 +554,7 @@ def change_email():
             'attempts': 0
         }
 
-        send_otp_email(new_email, otp)
+        send_otp_email(new_email, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
 
         return jsonify({'status': 'success', 'message': 'OTP sent to new email.'}), 200
 
@@ -781,7 +783,7 @@ def delete_account():
             "attempts": 0
         }
 
-        send_otp_email(email, otp)
+        send_otp_email(email, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
         return jsonify({"status": "success", "message": "OTP sent to your email.", "email": email}), 200
 
     except mysql.connector.Error as err:
