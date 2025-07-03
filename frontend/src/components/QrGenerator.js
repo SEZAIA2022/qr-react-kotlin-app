@@ -19,7 +19,7 @@ const QrGenerator = () => {
     setResults([]); // Clear previous results while loading
 
     try {
-      const res = await axios.post("http://localhost:5000/api/generate_qr", { count: numCount });
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, { count: numCount });
       setResults(res.data);
     } catch (error) {
       console.error("Erreur lors de la génération des QR codes :", error);
@@ -62,7 +62,7 @@ const QrGenerator = () => {
             <div key={qr.code} style={qrItemStyle}>
               <p style={{ fontWeight: '600', marginBottom: '8px' }}>{qr.code}</p>
               <img
-                src={`http://localhost:5000${qr.image_path}`}
+                src={`${process.env.REACT_APP_API_URL}${qr.image_path}`}
                 alt={`QR code pour ${qr.code}`}
                 width="150"
                 height="150"
@@ -73,7 +73,7 @@ const QrGenerator = () => {
                 style={downloadBtnStyle}
                 onClick={() => {
                   const link = document.createElement('a');
-                  link.href = `http://localhost:5000${qr.image_path}`;
+                  link.href = `${process.env.REACT_APP_API_URL}${qr.image_path}`;
                   link.download = `${qr.code}.png`;
                   document.body.appendChild(link);
                   link.click();

@@ -12,7 +12,7 @@ const QuestionForm = () => {
   // Charger les questions depuis l'API Flask
   const fetchQuestions = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/questions');
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`);
       setQuestions(res.data);
       setSelected({});
       setEditId(null);
@@ -31,7 +31,7 @@ const QuestionForm = () => {
     e.preventDefault();
     if (!text.trim()) return;
     try {
-      await axios.post('http://localhost:5000/api/questions', { text });
+      await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, { text });
       setMessage('✅ Question ajoutée avec succès !');
       setText('');
       fetchQuestions();
@@ -62,7 +62,7 @@ const QuestionForm = () => {
     try {
       await Promise.all(
         idsToDelete.map((id) =>
-          axios.delete(`http://localhost:5000/api/delete_question/${id}`)
+          axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`)
         )
       );
       setMessage(`✅ ${idsToDelete.length} question(s) supprimée(s) avec succès.`);
@@ -75,7 +75,7 @@ const QuestionForm = () => {
   // Supprimer une seule question
   const deleteQuestion = async (id) => {
     try {
-      await axios.delete(`http://localhost:5000/api/delete_question/${id}`);
+      await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
       setMessage('✅ Question supprimée avec succès.');
       fetchQuestions();
     } catch (error) {
@@ -102,7 +102,7 @@ const QuestionForm = () => {
       return;
     }
     try {
-      await axios.put(`http://localhost:5000/api/edit_question/${editId}`, {
+      await axios.put(`${process.env.REACT_APP_API_URL}/api/edit_question/${editId}`, {
         text: editText,
       });
       setMessage('✅ Question modifiée avec succès.');

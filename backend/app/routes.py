@@ -888,7 +888,7 @@ def exist_qr():
     data = request.get_json()
     if not data:
         return jsonify({'status': 'error', 'message': "No data received."}), 400
-
+    username = data.get('username')
     qr_code = data.get('qr_code')
     if not qr_code:
         return jsonify({'status': 'error', 'message': 'QR code is required.'}), 400
@@ -899,7 +899,7 @@ def exist_qr():
         cursor = conn.cursor()
 
         # Vérifie si le QR code existe
-        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s", (qr_code,))
+        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s and user = %s", (qr_code, username))
         result = cursor.fetchone()
 
         if result:
@@ -929,11 +929,19 @@ def exist_qr():
 from datetime import datetime
 @bp.route('/ask_repair', methods=['GET'])
 def ask_repair():
+    username = request.args.get('username')
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair")
+        if username:
+            cursor.execute(
+                "SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair WHERE username = %s",
+                (username,)
+            )
+        else:
+            cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair")
+
         asks = cursor.fetchall()
 
         asks_list = [{
@@ -958,6 +966,7 @@ def ask_repair():
         if conn.is_connected():
             cursor.close()
             conn.close()
+
 
 @bp.route('/send_email', methods=['POST'])
 def send_email():
@@ -1122,17 +1131,37 @@ def get_questions():
 
 @bp.route('/delete_question/<int:question_id>', methods=['DELETE'])
 def delete_question(question_id):
+    conn = None
     try:
         # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
+
+        # 1. Supprimer la question
         cursor.execute("DELETE FROM questions WHERE id = %s", (question_id,))
         conn.commit()
 
-        return jsonify({"status": "success", "message": "Question successfully deleted"}), 200
+        # 2. Récupérer le MAX(id) restant dans la table
+        cursor.execute("SELECT MAX(id) FROM questions;")
+        max_id = cursor.fetchone()[0]
+
+        # 3. Définir la nouvelle valeur d'AUTO_INCREMENT (max_id + 1 ou 1 si vide)
+        new_auto_inc = (max_id or 0) + 1
+        cursor.execute(f"ALTER TABLE questions AUTO_INCREMENT = {new_auto_inc};")
+        conn.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Question successfully deleted",
+            "next_id": new_auto_inc
+        }), 200
 
     except mysql.connector.Error as err:
-        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+        return jsonify({
+            'status': 'error',
+            'message': f'Database error: {str(err)}'
+        }), 500
+
     finally:
         if conn:
             cursor.close()
