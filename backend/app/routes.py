@@ -1184,3 +1184,70 @@ def update_question(question_id):
     finally:
         cursor.close()
         conn.close()
+
+
+
+
+
+
+
+
+@bp.route('/cancel_appointment', methods=['POST'])
+def cancel_appointment():
+    import traceback
+    try:
+        data = request.get_json()
+        repair_id = data.get('id')
+
+        if not repair_id:
+            return jsonify({'status': 'error', 'message': 'Missing repair id'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Récupérer username et qr_code pour la ligne à supprimer
+        cursor.execute("SELECT username, qr_code FROM ask_repair WHERE id = %s", (repair_id,))
+        result = cursor.fetchone()
+        if not result:
+            return jsonify({'status': 'error', 'message': 'Repair not found'}), 404
+        
+        username, qr_code = result
+
+        # Supprimer la ligne dans ask_repair
+        cursor.execute("DELETE FROM ask_repair WHERE id = %s", (repair_id,))
+
+        # Supprimer les lignes correspondantes dans responses
+        cursor.execute(
+            "DELETE FROM responses WHERE username = %s AND qr_code = %s",
+            (username, qr_code)
+        )
+
+        conn.commit()
+
+        cursor.execute("SELECT MAX(id) FROM responses;")
+        max_id = cursor.fetchone()[0]
+        new_auto_inc = (max_id or 0) + 1
+        cursor.execute(f"ALTER TABLE responses AUTO_INCREMENT = {new_auto_inc};")
+
+        conn.commit()
+
+        cursor.execute("SELECT MAX(id) FROM ask_repair;")
+        max_id = cursor.fetchone()[0]
+        new_auto_inc = (max_id or 0) + 1
+        cursor.execute(f"ALTER TABLE ask_repair AUTO_INCREMENT = {new_auto_inc};")
+
+        conn.commit()
+
+
+        return jsonify({'status': 'success', 'message': 'Appointment and related responses deleted successfully'}), 200
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'status': 'error', 'message': f'Internal server error: {str(e)}'}), 500
+
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+
