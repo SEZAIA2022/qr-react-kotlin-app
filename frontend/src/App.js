@@ -27,12 +27,29 @@ const NavBar = () => {
   return (
     <nav style={navStyle}>
       <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>
-        Générateur QR
+        QR generator
       </CustomLink>
       <span style={{ margin: '0 8px' }}>|</span>
       <CustomLink to="/questions" active={location.pathname === '/questions'}>
         Questions
       </CustomLink>
+      <span style={{ margin: '0 8px' }}>|</span>
+      <CustomLink to="/about_us" active={location.pathname === '/about_us'}>
+        About us
+      </CustomLink>
+      <span style={{ margin: '0 8px' }}>|</span>
+      <CustomLink to="/privacy_policy" active={location.pathname === '/privacy_policy'}>
+        Privacy policy
+      </CustomLink>
+      <span style={{ margin: '0 8px' }}>|</span>
+      <CustomLink to="/term_of_use" active={location.pathname === '/term_of_use'}>
+        Term of use
+      </CustomLink>
+      <span style={{ margin: '0 8px' }}>|</span>
+      <CustomLink to="/help_center" active={location.pathname === '/help_center'}>
+        Help center
+      </CustomLink>
+      
     </nav>
   );
 };

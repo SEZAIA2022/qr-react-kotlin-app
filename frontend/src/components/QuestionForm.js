@@ -18,7 +18,7 @@ const QuestionForm = () => {
       setEditId(null);
       setEditText('');
     } catch (error) {
-      setMessage('Erreur lors du chargement des questions.');
+      setMessage('Error loading questions.');
     }
   };
 
@@ -32,11 +32,11 @@ const QuestionForm = () => {
     if (!text.trim()) return;
     try {
       await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, { text });
-      setMessage('✅ Question ajoutée avec succès !');
+      setMessage('✅ Question successfully added !');
       setText('');
       fetchQuestions();
     } catch (error) {
-      setMessage("❌ Erreur lors de l'ajout.");
+      setMessage("❌ Error adding.");
     }
   };
 
@@ -55,7 +55,7 @@ const QuestionForm = () => {
       .map(([id]) => id);
 
     if (idsToDelete.length === 0) {
-      setMessage('Veuillez sélectionner au moins une question à supprimer.');
+      setMessage('Please select at least one question to delete.');
       return;
     }
 
@@ -65,10 +65,10 @@ const QuestionForm = () => {
           axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`)
         )
       );
-      setMessage(`✅ ${idsToDelete.length} question(s) supprimée(s) avec succès.`);
+      setMessage(`✅ ${idsToDelete.length} question(s) successfully deleted.`);
       fetchQuestions();
     } catch (error) {
-      setMessage('Erreur lors de la suppression des questions.');
+      setMessage('Error when deleting questions.');
     }
   };
 
@@ -76,10 +76,10 @@ const QuestionForm = () => {
   const deleteQuestion = async (id) => {
     try {
       await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
-      setMessage('✅ Question supprimée avec succès.');
+      setMessage('✅ Question successfully deleted.');
       fetchQuestions();
     } catch (error) {
-      setMessage('Erreur lors de la suppression de la question.');
+      setMessage('Error deleting question.');
     }
   };
 
@@ -98,36 +98,36 @@ const QuestionForm = () => {
   // Sauvegarder édition
   const saveEdit = async () => {
     if (!editText.trim()) {
-      setMessage('Le texte ne peut pas être vide.');
+      setMessage('Text cannot be empty.');
       return;
     }
     try {
       await axios.put(`${process.env.REACT_APP_API_URL}/api/edit_question/${editId}`, {
         text: editText,
       });
-      setMessage('✅ Question modifiée avec succès.');
+      setMessage('✅ Question successfully modified.');
       setEditId(null);
       setEditText('');
       fetchQuestions();
     } catch (error) {
-      setMessage('Erreur lors de la modification.');
+      setMessage('Error during modification.');
     }
   };
 
   return (
     <div style={containerStyle}>
-      <h2>Ajouter une Question</h2>
+      <h2>Add a Question</h2>
       <form onSubmit={handleSubmit} style={formStyle}>
         <textarea
           rows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Écris ta question ici"
+          placeholder="Write your question here"
           style={textareaStyle}
           required
         />
         <button type="submit" style={buttonStyle}>
-          Ajouter
+          ADD
         </button>
       </form>
 
@@ -138,7 +138,7 @@ const QuestionForm = () => {
         onClick={deleteSelected}
         style={{ ...buttonStyle, marginBottom: '15px', backgroundColor: '#dc3545' }}
       >
-        Supprimer la sélection
+        Delete selection
       </button>
 
       <ul style={listStyle}>
@@ -169,7 +169,7 @@ const QuestionForm = () => {
                 <button
                   onClick={saveEdit}
                   className="question-icon-button"
-                  title="Enregistrer"
+                  title="Save"
                   style={{ marginRight: '8px' }}
                 >
                   💾
@@ -177,7 +177,7 @@ const QuestionForm = () => {
                 <button
                   onClick={cancelEditing}
                   className="question-icon-button"
-                  title="Annuler"
+                  title="Cancel"
                 >
                   ✖️
                 </button>
@@ -190,7 +190,7 @@ const QuestionForm = () => {
                   onClick={() => startEditing(id, text)}
                   className="question-icon-button"
                   aria-label={`Éditer la question ${id}`}
-                  title="Éditer"
+                  title="Edit"
                   style={{ marginRight: '10px' }}
                 >
                   ✏️
@@ -198,13 +198,13 @@ const QuestionForm = () => {
 
                 <button
                   onClick={() => {
-                    if (window.confirm("Voulez-vous vraiment supprimer cette question ?")) {
+                    if (window.confirm("Do you really want to delete this question ?")) {
                       deleteQuestion(id);
                     }
                   }}
                   className="question-icon-button"
                   aria-label={`Supprimer la question ${id}`}
-                  title="Supprimer"
+                  title="Delete"
                 >
                   🗑️
                 </button>

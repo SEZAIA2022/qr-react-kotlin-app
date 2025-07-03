@@ -10,7 +10,7 @@ const QrGenerator = () => {
   const generateQR = async () => {
     const numCount = parseInt(count, 10);
     if (isNaN(numCount) || numCount < 1) {
-      setErrorMsg("Veuillez entrer un nombre valide (≥ 1).");
+      setErrorMsg("Please enter a valid number (≥ 1).");
       return;
     }
 
@@ -22,8 +22,8 @@ const QrGenerator = () => {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, { count: numCount });
       setResults(res.data);
     } catch (error) {
-      console.error("Erreur lors de la génération des QR codes :", error);
-      setErrorMsg("Erreur lors de la génération des QR codes. Veuillez réessayer.");
+      console.error("Error generating QR codes :", error);
+      setErrorMsg("Error generating QR codes. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -31,7 +31,7 @@ const QrGenerator = () => {
 
   return (
     <div style={containerStyle}>
-      <h2 style={{ marginBottom: '20px' }}>Générateur de QR Codes</h2>
+      <h2 style={{ marginBottom: '20px' }}>QR Code generator</h2>
 
       <div style={inputContainerStyle}>
         <input
@@ -48,13 +48,13 @@ const QrGenerator = () => {
           style={buttonStyle}
           aria-busy={loading}
         >
-          {loading ? "Génération..." : "Générer"}
+          {loading ? "Generate..." : "Generate"}
         </button>
       </div>
 
       {errorMsg && <p style={errorStyle}>{errorMsg}</p>}
 
-      {loading && <p style={loadingStyle}>Génération en cours… ⏳</p>}
+      {loading && <p style={loadingStyle}>Generation in progress… ⏳</p>}
 
       {results.length > 0 && (
         <div style={resultsContainerStyle}>
@@ -80,7 +80,7 @@ const QrGenerator = () => {
                   document.body.removeChild(link);
                 }}
               >
-                Télécharger
+                Download
               </button>
             </div>
           ))}
