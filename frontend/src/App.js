@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } f
 import Toolbar from './components/Toolbar';
 import QuestionForm from './components/QuestionForm';
 import QrGenerator from './components/QrGenerator';
+import StaticPage from './components/StaticPage';
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
           <Route path="/" element={<Navigate to="/qr-generator" replace />} />
           <Route path="/qr-generator" element={<QrGenerator />} />
           <Route path="/questions" element={<QuestionForm />} />
+          <Route path="/static_page" element={<StaticPage />} />
         </Routes>
       </main>
     </Router>
@@ -34,20 +36,8 @@ const NavBar = () => {
         Questions
       </CustomLink>
       <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/about_us" active={location.pathname === '/about_us'}>
-        About us
-      </CustomLink>
-      <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/privacy_policy" active={location.pathname === '/privacy_policy'}>
-        Privacy policy
-      </CustomLink>
-      <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/term_of_use" active={location.pathname === '/term_of_use'}>
-        Term of use
-      </CustomLink>
-      <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/help_center" active={location.pathname === '/help_center'}>
-        Help center
+      <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
+        Static Page
       </CustomLink>
       
     </nav>

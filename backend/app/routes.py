@@ -1186,8 +1186,109 @@ def update_question(question_id):
         conn.close()
 
 
+# 📘 GET: Récupérer le champ about_us
+@bp.route('/about_us', methods=['GET'])
+def get_about_us():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT about_us FROM static_pages WHERE id = 1")
+    result = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if not result:
+        return jsonify({"error": "Content not found"}), 404
+
+    return jsonify(result)
+
+# ✏️ PUT: Modifier le champ about_us
+@bp.route('/about_us', methods=['PUT'])
+def update_about_us():
+    data = request.get_json()
+    new_text = data.get('about_us', '').strip()
+
+    if not new_text:
+        return jsonify({"error": "Text is required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("UPDATE static_pages SET about_us = %s WHERE id = 1", (new_text,))
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "✅ About Us updated successfully.", "about_us": new_text})
+
+# 📘 GET: Récupérer le champ term_of_use
+@bp.route('/term_of_use', methods=['GET'])
+def get_term_of_use():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT term_of_use FROM static_pages WHERE id = 1")
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not result:
+        return jsonify({"error": "Content not found"}), 404
+
+    return jsonify(result)
+
+# ✏️ PUT: Modifier le champ term_of_use
+@bp.route('/term_of_use', methods=['PUT'])
+def update_term_of_use():
+    data = request.get_json()
+    new_text = data.get('term_of_use', '').strip()
+
+    if not new_text:
+        return jsonify({"error": "Text is required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE static_pages SET term_of_use = %s WHERE id = 1", (new_text,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "✅ Terms of Use updated successfully.", "term_of_use": new_text})
 
 
+# 📘 GET: Récupérer le champ privacy_policy
+@bp.route('/privacy_policy', methods=['GET'])
+def get_privacy_policy():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT privacy_policy FROM static_pages WHERE id = 1")
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not result:
+        return jsonify({"error": "Content not found"}), 404
+
+    return jsonify(result)
+
+# ✏️ PUT: Modifier le champ privacy_policy
+@bp.route('/privacy_policy', methods=['PUT'])
+def update_privacy_policy():
+    data = request.get_json()
+    new_text = data.get('privacy_policy', '').strip()
+
+    if not new_text:
+        return jsonify({"error": "Text is required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE static_pages SET privacy_policy = %s WHERE id = 1", (new_text,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "✅ Privacy Policy updated successfully.", "privacy_policy": new_text})
 
 
 
