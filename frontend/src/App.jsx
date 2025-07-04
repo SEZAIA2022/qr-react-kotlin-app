@@ -4,6 +4,7 @@ import Toolbar from './components/Toolbar';
 import QuestionForm from './components/QuestionForm';
 import QrGenerator from './components/QrGenerator';
 import StaticPage from './components/StaticPage';
+import HelpPage from './components/HelpPage';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/qr-generator" element={<QrGenerator />} />
           <Route path="/questions" element={<QuestionForm />} />
           <Route path="/static_page" element={<StaticPage />} />
+          <Route path="/help_page" element={<HelpPage />} />
         </Routes>
       </main>
     </Router>
@@ -38,6 +40,10 @@ const NavBar = () => {
       <span style={{ margin: '0 8px' }}>|</span>
       <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
         Static Page
+      </CustomLink>
+      <span style={{ margin: '0 8px' }}>|</span>
+      <CustomLink to="/help_page" active={location.pathname === '/help_page'}>
+       Help center
       </CustomLink>
       
     </nav>

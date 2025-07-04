@@ -1290,6 +1290,104 @@ def update_privacy_policy():
 
     return jsonify({"message": "✅ Privacy Policy updated successfully.", "privacy_policy": new_text})
 
+# 📘 GET : récupérer toutes les tâches help (id, title_help, help)
+@bp.route('/help_tasks', methods=['GET'])
+def get_help_tasks():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT id, title_help, help FROM help_tasks ORDER BY id ASC")
+    tasks = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    if not tasks:
+        return jsonify({"error": "No help tasks found"}), 404
+
+    return jsonify({"tasks": tasks})
+
+# ✏️ PUT : modifier une tâche help par id
+@bp.route('/help_tasks/<int:task_id>', methods=['PUT'])
+def update_help_task(task_id):
+    data = request.get_json()
+    new_title = data.get('title_help', '').strip()
+    new_content = data.get('help', '').strip()
+
+    if not new_title or not new_content:
+        return jsonify({"error": "Both title_help and help fields are required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM help_tasks WHERE id = %s", (task_id,))
+    existing = cursor.fetchone()
+
+    if not existing:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Help task not found"}), 404
+
+    cursor.execute(
+        "UPDATE help_tasks SET title_help = %s, help = %s WHERE id = %s",
+        (new_title, new_content, task_id)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        "message": "✅ Help task updated successfully.",
+        "task": {"id": task_id, "title_help": new_title, "help": new_content}
+    })
+
+# ➕ POST add new help task
+@bp.route('/help_tasks', methods=['POST'])
+def add_help_task():
+    data = request.get_json()
+    title_help = data.get('title_help', '').strip()
+    help_text = data.get('help', '').strip()
+
+    if not title_help or not help_text:
+        return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO help_tasks (title_help, help) VALUES (%s, %s)",
+        (title_help, help_text)
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        "message": "✅ Tâche ajoutée avec succès.",
+        "task": {
+            "id": new_id,
+            "title_help": title_help,
+            "help": help_text
+        }
+    }), 201
+
+# 🗑 DELETE help task by id
+@bp.route('/help_tasks/<int:task_id>', methods=['DELETE'])
+def delete_help_task(task_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM help_tasks WHERE id = %s", (task_id,))
+    conn.commit()
+    cursor.execute("SELECT MAX(id) FROM help_tasks;")
+    max_id = cursor.fetchone()[0]
+    new_auto_inc = (max_id or 0) + 1
+    cursor.execute(f"ALTER TABLE help_tasks AUTO_INCREMENT = {new_auto_inc};")
+
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "✅ Tâche supprimée avec succès."})
+
+
 
 
 
