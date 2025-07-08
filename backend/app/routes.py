@@ -889,6 +889,7 @@ def exist_qr():
     if not data:
         return jsonify({'status': 'error', 'message': "No data received."}), 400
     username = data.get('username')
+    role = data.get('role')
     qr_code = data.get('qr_code')
     if not qr_code:
         return jsonify({'status': 'error', 'message': 'QR code is required.'}), 400
@@ -897,9 +898,12 @@ def exist_qr():
         # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
+        if(role == 'user'):
+            # Vérifie si le QR code existe
+            cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s and user = %s", (qr_code, username))
+        else: 
+                        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s ", (qr_code, ))
 
-        # Vérifie si le QR code existe
-        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s and user = %s", (qr_code, username))
         result = cursor.fetchone()
 
         if result:
@@ -1450,3 +1454,23 @@ def cancel_appointment():
             conn.close()
 
 
+@bp.route('/get_qrcodes', methods=['GET'])
+def get_qrcodes():
+    try:
+        connection =get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT qr_code FROM qr_codes WHERE is_active = %s", (1,))
+        results = cursor.fetchall()
+
+
+        qrcodes = [row['qr_code'] for row in results if row['qr_code']]  # Exclut les valeurs nulles
+        return jsonify({'status': 'success', 'qrcodes': qrcodes}), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
