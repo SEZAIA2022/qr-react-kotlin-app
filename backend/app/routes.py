@@ -15,6 +15,7 @@ from .utils import (
     get_user_by_contact,
     hash_password,
     is_email_taken,
+    reset_auto_increment,
     send_otp_sms,
     verify_password,
     is_valid_password,
@@ -328,94 +329,76 @@ def resend_otp():
         print("Error sending OTP:", str(e))
         return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
 
-# Endpoint pour enregistrer la réponse
-@bp.route('/save_response', methods=['POST'])
-def save_response():
+@bp.route('/send_ask_and_response', methods=['POST'])
+def send_ask_and_response():
     try:
         data = request.get_json()
-        print("Received data:", data)  # DEBUG: Afficher les données reçues
-
-        question_id = data.get('question_id')
-        response_text = data.get('response')
-        username = data.get('username')
-        qr_code = data.get('qr_code')
-
-        if not question_id or not response_text or not username or not qr_code:
-            return jsonify({'status': 'error', 'message': "Missing data."}), 400
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # DEBUG : Afficher la requête et les valeurs
-        print(f"Inserting: {question_id}, {response_text}, {username}, {qr_code}")
-
-        cursor.execute(
-            "INSERT INTO responses (question_id, response, username, qr_code) VALUES (%s, %s, %s, %s)",
-            (question_id, response_text, username, qr_code)
-        )
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-
-        return jsonify({'status': 'success', 'message': "Response saved."}), 200
-
-    except Exception as e:
-        print("Error:", e)  # Affiche l'erreur complète dans la console
-        return jsonify({'status': 'error', 'message': f'Erreur : {str(e)}'}), 500
-
-    
-@bp.route('/send_ask', methods=['POST'])
-def send_ask():
-    try:
-        data = request.get_json()
-        print("Received data in send_ask:", data)
+        print("Received data in combined endpoint:", data)
 
         username = data.get('username')
-        date_str = data.get('date')  # format attendu: "Tuesday, 03 June 16:50"
+        date_str = data.get('date')  # ex: "Tuesday, 03 June 16:50"
         comment = data.get('comment')
         qr_code = data.get('qr_code')
+        responses = data.get('responses')  # liste de dicts: [{'question_id':1, 'response':'Yes'}, ...]
 
-        if not username or not date_str or not comment or not qr_code:
+        # Vérifications basiques
+        if not all([username, date_str, comment, qr_code, responses]):
             return jsonify({'status': 'error', 'message': 'Missing data'}), 400
 
-        try:
-            # Extrait la partie utile
-            parts = date_str.split(', ')
-            if len(parts) != 2:
-                raise ValueError("Expected format: 'DayName, dd MMMM HH:mm'")
+        # Parse date
+        parts = date_str.split(', ')
+        if len(parts) != 2:
+            return jsonify({'status': 'error', 'message': "Date format incorrect"}), 400
 
-            date_time_str = parts[1]  # '03 June 16:50'
-            current_year = datetime.now().year
-            full_datetime_str = f"{date_time_str} {current_year}"  # '03 June 16:50 2025'
+        date_time_str = parts[1]
+        current_year = datetime.now().year
+        full_datetime_str = f"{date_time_str} {current_year}"
+        appointment_datetime = datetime.strptime(full_datetime_str, "%d %B %H:%M %Y")
 
-            appointment_datetime = datetime.strptime(full_datetime_str, "%d %B %H:%M %Y")
-
-        except Exception as parse_err:
-            print("Error parsing date:", parse_err)
-            return jsonify({'status': 'error', 'message': 'Invalid date format. Expected: dd MMMM HH:mm'}), 400
-
-        # Séparer date et heure
-        date_only = appointment_datetime.date()     # 2025-06-03
-        time_only = appointment_datetime.time()     # 16:50:00
-
-        print(f"Inserting into ask_repair: username={username}, date={date_only}, hour_slot={time_only}, comment={comment}, qr_code={qr_code}")
+        date_only = appointment_datetime.date()
+        time_only = appointment_datetime.time()
 
         conn = get_db_connection()
+        reset_auto_increment(conn, "ask_repair")
         cursor = conn.cursor()
+
+        # Démarrer la transaction (automatique avec InnoDB, mais on peut expliciter)
+        # Insert ask_repair
         cursor.execute(
             "INSERT INTO ask_repair (username, date, hour_slot, comment, qr_code) VALUES (%s, %s, %s, %s, %s)",
             (username, date_only, time_only, comment, qr_code)
         )
+        ask_repair_id = cursor.lastrowid
+        print(f"Inserted ask_repair with id: {ask_repair_id}")
+        reset_auto_increment(conn, "responses")
+        # Insert responses
+        for resp in responses:
+            question_id = resp.get('question_id')
+            response_text = resp.get('response')
+            if not question_id or not response_text:
+                conn.rollback()
+                return jsonify({'status': 'error', 'message': 'Missing question_id or response in responses list'}), 400
+
+            cursor.execute(
+                "INSERT INTO responses (question_id, response, username, qr_code, ask_repair_id) VALUES (%s, %s, %s, %s, %s)",
+                (question_id, response_text, username, qr_code, ask_repair_id)
+            )
+            print(f"Inserted response for question_id {question_id}")
+
         conn.commit()
         cursor.close()
         conn.close()
 
-        return jsonify({'status': 'success', 'message': 'Ask repair saved'}), 200
+        return jsonify({'status': 'success', 'message': 'Ask repair and responses saved', 'ask_repair_id': ask_repair_id}), 200
 
     except Exception as e:
-        print("Error in send_ask:", e)
+        print("Error in combined endpoint:", e)
+        if conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
         return jsonify({'status': 'error', 'message': f'Erreur : {str(e)}'}), 500
+
     
 
 @bp.route('/change-password', methods=['POST'])

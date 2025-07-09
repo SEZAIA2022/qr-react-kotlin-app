@@ -168,6 +168,22 @@ def generate_qr_code(output_folder):
     img.save(path)
     return code, path
 
+def reset_auto_increment(conn, table_name: str):
+    cursor = conn.cursor()
+    try:
+        cursor.execute(f"SELECT MAX(id) FROM {table_name};")
+        max_id = cursor.fetchone()[0]
+        new_auto_inc = (max_id or 0) + 1
+        cursor.execute(f"ALTER TABLE {table_name} AUTO_INCREMENT = {new_auto_inc};")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
+
+
+
 # def hash_qr_code(qr_code_str: str) -> str:
 #     salt = bcrypt.gensalt()
 #     hashed = bcrypt.hashpw(qr_code_str.encode('utf-8'), salt)
