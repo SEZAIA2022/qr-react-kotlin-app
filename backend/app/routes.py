@@ -871,36 +871,65 @@ def exist_qr():
     data = request.get_json()
     if not data:
         return jsonify({'status': 'error', 'message': "No data received."}), 400
+
     username = data.get('username')
     role = data.get('role')
     qr_code = data.get('qr_code')
+
     if not qr_code:
         return jsonify({'status': 'error', 'message': 'QR code is required.'}), 400
 
     try:
-        # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
-        if(role == 'user'):
-            # Vérifie si le QR code existe
-            cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s and user = %s", (qr_code, username))
-        else: 
-                        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s ", (qr_code, ))
 
-        result = cursor.fetchone()
-
-        if result:
-            is_active = result[0]
-            if is_active == True:
-                return jsonify({'status': 'success', 'message': 'QR code is active', 'is_active': True}), 200
-            else:
-                return jsonify({'status': 'success', 'message': 'QR code is not active', 'is_active': False}), 200
+        # Vérification existence QR code selon rôle
+        if role == 'user':
+            cursor.execute(
+                "SELECT is_active FROM qr_codes WHERE qr_code = %s AND user = %s",
+                (qr_code, username)
+            )
         else:
-            # Insertion du QR code si inexistant
-            # cursor.execute("INSERT INTO qr_codes (qr_code) VALUES (%s)", (qr_code,))
-            # conn.commit()
-            # QR code non trouvé
-            return jsonify({'status': 'success', 'message': 'QR code does not exist'}), 404
+            cursor.execute(
+                "SELECT is_active FROM qr_codes WHERE qr_code = %s",
+                (qr_code,)
+            )
+        result = cursor.fetchone()
+        if result is None:
+            return jsonify({'status': 'error', 'message': 'QR code does not exist.'}), 404
+
+        is_active = result[0]
+
+        # Recherche demande de réparation en cours pour ce QR code
+        cursor.execute(
+            "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s",
+            (qr_code, "Processing")
+        )
+        qr_id_status = cursor.fetchone()
+
+        if is_active:
+            response = {
+                'status': 'success',
+                'message': 'QR code is active',
+                'is_active': True,
+            }
+            if qr_id_status:
+                response.update({
+                    'status_repair': qr_id_status[1],
+                    'id_ask_repair': qr_id_status[0]
+                })
+            else :
+                response.update({
+                    'message': "QR code is active with no repair request"
+                }) 
+            return jsonify(response), 200
+        else:
+        
+            return jsonify({
+                'status': 'success',
+                'message': 'QR code is not active',
+                'is_active': False
+            }), 200
 
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
@@ -909,6 +938,7 @@ def exist_qr():
         if conn.is_connected():
             cursor.close()
             conn.close()
+
 
 
 
@@ -1457,3 +1487,83 @@ def get_qrcodes():
         if connection.is_connected():
             cursor.close()
             connection.close()
+            
+
+
+@bp.route('/ask_repair/details/<int:repair_id>', methods=['GET'])
+def get_repair_with_responses(repair_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Récupérer la demande de réparation
+        cursor.execute("""
+            SELECT id, username, date, comment, qr_code, hour_slot, status
+            FROM ask_repair
+            WHERE id = %s
+        """, (repair_id,))
+        repair = cursor.fetchone()
+
+        if not repair:
+            return jsonify({'status': 'error', 'message': 'Demande de réparation non trouvée'}), 404
+
+        # Récupérer toutes les réponses associées à cette demande (responses)
+        cursor.execute("""
+            SELECT response, question_id
+            FROM responses
+            WHERE ask_repair_id = %s
+            ORDER BY question_id ASC
+        """, (repair_id,))
+        responses = cursor.fetchall()
+
+        # Extraire tous les question_id uniques pour récupérer les questions correspondantes
+        question_ids = list({r[1] for r in responses})
+        questions_dict = {}
+
+        if question_ids:
+            format_strings = ','.join(['%s'] * len(question_ids))
+            cursor.execute(f"""
+                SELECT id, text
+                FROM questions
+                WHERE id IN ({format_strings})
+            """, tuple(question_ids))
+            questions = cursor.fetchall()
+            # Construire un dict id -> question_text
+            questions_dict = {q[0]: q[1] for q in questions}
+
+        # Préparer les données de la demande
+        repair_data = {
+            'id': repair[0],
+            'username': repair[1],
+            'date': repair[2].strftime("%A, %d %b %Y") if repair[2] else None,
+            'comment': repair[3],
+            'qr_code': repair[4],
+            'hour_slot': (
+                f"{repair[5].seconds // 3600:02}:{(repair[5].seconds % 3600) // 60:02}:{repair[5].seconds % 60:02}"
+                if repair[5] else None
+            ),
+            'status': repair[6]
+        }
+
+        # Préparer la liste des réponses avec question associée
+        responses_list = []
+        for r in responses:
+            responses_list.append({
+                'response': r[0],
+                'question_id': r[1],
+                'question_text': questions_dict.get(r[1], "Question inconnue")
+            })
+
+        # Retourner un JSON combiné
+        return jsonify({
+            'repair': repair_data,
+            'responses': responses_list
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({'status': 'error', 'message': f'Erreur base de données : {str(err)}'}), 500
+
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
