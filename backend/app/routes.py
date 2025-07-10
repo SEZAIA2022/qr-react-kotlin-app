@@ -1613,3 +1613,51 @@ def add_description():
     finally:
         cursor.close()
         conn.close()
+
+@bp.route('/get_repair_by_qrcode_full', methods=['GET'])
+def get_repair_by_qrcode_full():
+    try:
+        qr_code = request.args.get('qr_code')
+        if not qr_code:
+            return jsonify({'status': 'error', 'message': "Le paramètre 'qr_code' est requis."}), 400
+
+        connection = get_db_connection()
+        cursor = connection.cursor()
+
+        query = "SELECT * FROM ask_repair WHERE qr_code = %s"
+        cursor.execute(query, (qr_code,))
+        results = cursor.fetchall()
+
+        if not results:
+            return jsonify({'status': 'error', 'message': "Aucune donnée trouvée pour ce QR code."}), 404
+
+        # Pour chaque ligne, reconstruire un dict en formatant la date comme dans ton exemple
+        formatted_results = []
+        for row in results:
+            # Exemple : adapter les noms de colonnes selon ta table
+            formatted_row = {
+                'id': row[0],
+                'username': row[1],
+                'date': row[2].strftime("%A, %d %b %Y") if row[2] else None,
+                'comment': row[3],
+                'qr_code': row[4],
+                'hour_slot': (
+                    f"{row[5].seconds // 3600:02}:{(row[5].seconds % 3600) // 60:02}:{row[5].seconds % 60:02}"
+                    if row[5] else None
+                ),
+                'status': row[6],
+                'description_problem': row[7]
+                # ajoute d'autres champs si nécessaire
+            }
+            formatted_results.append(formatted_row)
+
+        return jsonify({'status': 'success', 'data': formatted_results}), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f"Erreur serveur : {str(e)}"}), 500
+
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
