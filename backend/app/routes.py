@@ -1567,3 +1567,49 @@ def get_repair_with_responses(repair_id):
         if conn.is_connected():
             cursor.close()
             conn.close()
+
+@bp.route('/add_description', methods=['POST'])
+def add_description():
+    data = request.json
+
+    repair_id = data.get('id')
+    description = data.get('description_probleme')
+
+    if not repair_id or description is None:
+        return jsonify({
+            'status': 'error',
+            'message': 'Champs id et description_probleme requis'
+        }), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        update_query = """
+            UPDATE ask_repair
+            SET description_probleme = %s,status = 'repaired'
+            WHERE id = %s
+        """
+        cursor.execute(update_query, (description, repair_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'Aucune demande trouvée avec cet ID'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Description mise à jour avec succès'
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({
+            'status': 'error',
+            'message': str(err)
+        }), 500
+
+    finally:
+        cursor.close()
+        conn.close()
