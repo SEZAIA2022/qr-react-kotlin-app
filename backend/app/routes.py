@@ -843,16 +843,25 @@ def add_qr():
         return jsonify({'status': 'error', 'message': 'All fields are required'}), 400
 
     try:
-        # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Insertion avec is_active = TRUE
+        # Vérifie si l'utilisateur existe
+        cursor.execute("SELECT 1 FROM users WHERE username = %s", (username,))
+        user_exists = cursor.fetchone()
+
+        if not user_exists:
+            return jsonify({'status': 'error', 'message': 'User does not exist.'}), 404
+
+        # Mise à jour du QR code
         cursor.execute("""
             UPDATE qr_codes
             SET user = %s, locations = %s, is_active = TRUE
             WHERE qr_code = %s
         """, (username, location, qr_code))
+
+        if cursor.rowcount == 0:
+            return jsonify({'status': 'error', 'message': 'QR code not found.'}), 404
 
         conn.commit()
         return jsonify({'status': 'success', "message": "QR code successfully added and activated."}), 200
@@ -864,6 +873,7 @@ def add_qr():
         if conn and conn.is_connected():
             cursor.close()
             conn.close()
+
 
 
 @bp.route('/exist_qr', methods=['POST'])
@@ -883,62 +893,68 @@ def exist_qr():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Vérification existence QR code selon rôle
-        if role == 'user':
-            cursor.execute(
-                "SELECT is_active FROM qr_codes WHERE qr_code = %s AND user = %s",
-                (qr_code, username)
-            )
-        else:
-            cursor.execute(
-                "SELECT is_active FROM qr_codes WHERE qr_code = %s",
-                (qr_code,)
-            )
-        result = cursor.fetchone()
-        if result is None:
-            return jsonify({'status': 'error', 'message': 'QR code does not exist.'}), 404
+        # Vérifier l'existence du QR code
+        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s", (qr_code,))
+        qr_result = cursor.fetchone()
 
-        is_active = result[0]
+        if qr_result is None:
+            return jsonify({'status': 'error', 'message': 'Unknown QR code'}), 404
 
-        # Recherche demande de réparation en cours pour ce QR code
-        cursor.execute(
-            "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s",
-            (qr_code, "Processing")
-        )
-        qr_id_status = cursor.fetchone()
+        is_active = qr_result[0]
 
-        if is_active:
-            response = {
-                'status': 'success',
-                'message': 'QR code is active',
-                'is_active': True,
-            }
-            if qr_id_status:
-                response.update({
-                    'status_repair': qr_id_status[1],
-                    'id_ask_repair': qr_id_status[0]
-                })
-            else :
-                response.update({
-                    'message': "QR code is active with no repair request"
-                }) 
-            return jsonify(response), 200
-        else:
-        
+        # Si le QR code est inactif
+        if not is_active:
             return jsonify({
                 'status': 'success',
                 'message': 'QR code is not active',
                 'is_active': False
             }), 200
 
+        # Vérifier si l'utilisateur est autorisé (si role = user)
+        if role == "user":
+            cursor.execute(
+                "SELECT * FROM qr_codes WHERE qr_code = %s AND user = %s",
+                (qr_code, username)
+            )
+            user_qr = cursor.fetchone()
+            if not user_qr:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'QR code is not valid for this user.'
+                }), 403  # Forbidden
+
+        # Vérifier s’il y a une réparation en cours
+        cursor.execute(
+            "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s",
+            (qr_code, "Processing")
+        )
+        repair_status = cursor.fetchone()
+
+        # Réponse générale
+        response = {
+            'status': 'success',
+            'message': 'QR code is active',
+            'is_active': True
+        }
+
+        if repair_status:
+            response.update({
+                'status_repair': repair_status[1],
+                'id_ask_repair': repair_status[0],
+                'message': 'QR code is active and currently under repair (Processing)'
+            })
+        elif role == "admin":
+            response['message'] = 'QR code is active with no repair request'
+
+        return jsonify(response), 200
+
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
 
     finally:
-        if conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
-
 
 
 
@@ -1074,27 +1090,37 @@ def generate_qr():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    output_folder = os.path.join(current_app.root_path, "static", "qr")
+    # Récupérer l'ID maximum existant
+    cursor.execute("SELECT MAX(id) FROM qr_codes")
+    max_id_result = cursor.fetchone()
+    current_id = max_id_result[0] or 0  # Si aucun ID encore présent, on commence à 0
 
+    output_folder = os.path.join(current_app.root_path, "static", "qr")
     generated = 0
+
     while generated < count:
         code, path = generate_qr_code(output_folder)
+
         try:
+            current_id += 1  # Incrémente l'ID localement
+
             cursor.execute("""
-                INSERT INTO qr_codes (qr_code, is_active)
-                VALUES (%s, %s)
-            """, (code, 0))
+                INSERT INTO qr_codes (id, qr_code, is_active)
+                VALUES (%s, %s, %s)
+            """, (current_id, code, 0))
+
             conn.commit()
 
             qr_list.append({
+                "id": current_id,
                 "code": code,
                 "image_path": f"/static/qr/{os.path.basename(path)}"
             })
             generated += 1
 
         except mysql.connector.IntegrityError as e:
-            if e.errno == 1062:  # Duplicate entry
-                # Code déjà existant, on génère un autre sans planter
+            if e.errno == 1062:  # Code déjà existant
+                current_id -= 1  # Annuler l'incrémentation
                 continue
             else:
                 cursor.close()
@@ -1105,6 +1131,7 @@ def generate_qr():
     conn.close()
 
     return jsonify(qr_list), 201
+
 
 
 @bp.route("/questions", methods=["POST"])
