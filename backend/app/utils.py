@@ -5,7 +5,8 @@ import uuid
 import os
 import smtplib
 import re
-from twilio.rest import Client
+import phonenumbers
+from phonenumbers import  PhoneNumberFormat, region_code_for_country_code
 from .database import get_db_connection
 
 # Stockage OTP temporaire
@@ -184,6 +185,32 @@ def reset_auto_increment(conn, table_name: str):
 
 
 
+
+def format_number_simple(number, country_or_prefix):
+    try:
+        # Si country_or_prefix est un indicatif international (+33 par exemple)
+        if country_or_prefix.startswith('+'):
+            # On convertit indicatif en code pays ISO (ex: "+33" -> "FR")
+            country_or_prefix = region_code_for_country_code(int(country_or_prefix.lstrip('+')))
+            if country_or_prefix is None:
+                return "Error: Invalid country calling code"
+
+        # Si le numéro commence par +, on le parse directement (numéro international complet)
+        if number.startswith('+'):
+            parsed_number = phonenumbers.parse(number, None)
+        else:
+            # Sinon on parse avec le code pays ISO détecté
+            parsed_number = phonenumbers.parse(number, country_or_prefix)
+
+        # Validation du numéro
+        if not phonenumbers.is_valid_number(parsed_number):
+            return "Invalid phone number"
+
+        # Formatage en E164 (ex: +33612345678)
+        return phonenumbers.format_number(parsed_number, PhoneNumberFormat.E164)
+
+    except phonenumbers.NumberParseException as e:
+        return f"Error: {str(e)}"
 # def hash_qr_code(qr_code_str: str) -> str:
 #     salt = bcrypt.gensalt()
 #     hashed = bcrypt.hashpw(qr_code_str.encode('utf-8'), salt)

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app
 from twilio.rest import Client
 from .utils import (
+    format_number_simple,
     generate_qr_code,
     register_otp_storage,
     otp_storage,
@@ -177,18 +178,18 @@ def verify_register():
 
         cursor.execute("""
             INSERT INTO users 
-                (username, email, password_hash, phone_number, address, role, ville, code_postal, indicatif_telephonique)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (username, email, password_hash, phone_number, address, role, city, code_postal)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             record['username'],
             record['email'],
             record['password_hash'],
-            record['number'],
+            format_number_simple(record['number'], record['country_code']),
             record['address'],
             record['role'],
             record['city'],
-            record['postal_code'],
-            record['country_code']
+            record['postal_code']
+
         ))
         conn.commit()
 
@@ -362,7 +363,6 @@ def send_ask_and_response():
         reset_auto_increment(conn, "ask_repair")
         cursor = conn.cursor()
 
-        # Démarrer la transaction (automatique avec InnoDB, mais on peut expliciter)
         # Insert ask_repair
         cursor.execute(
             "INSERT INTO ask_repair (username, date, hour_slot, comment, qr_code) VALUES (%s, %s, %s, %s, %s)",
@@ -389,7 +389,7 @@ def send_ask_and_response():
         cursor.close()
         conn.close()
 
-        return jsonify({'status': 'success', 'message': 'Ask repair and responses saved', 'ask_repair_id': ask_repair_id}), 200
+        return jsonify({'status': 'success', 'message': 'Request repair sent successfully ', 'ask_repair_id': ask_repair_id}), 200
 
     except Exception as e:
         print("Error in combined endpoint:", e)
@@ -619,7 +619,7 @@ def change_number():
         # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE phone_number=%s AND indicatif_telephonique=%s ", (phone, code))
+        cursor.execute("SELECT * FROM users WHERE phone_number=%s ", (format_number_simple(phone, code)))
         user = cursor.fetchone()
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error:{str(err)}'}), 500
@@ -638,10 +638,10 @@ def change_number():
             cursor = conn.cursor()
             cursor.execute("""
             UPDATE users 
-            SET phone_number = %s, indicatif_telephonique = %s 
-            WHERE phone_number = %s AND indicatif_telephonique = %s;
+            SET phone_number = %s
+            WHERE phone_number = %s ;
 
-            """, (new_phone, new_code, phone, code))
+            """, (format_number_simple(new_phone, new_code), format_number_simple(phone, code)))
             conn.commit()
             return jsonify({'status': 'success', 'message': 'number changed!'}), 200
         else:
@@ -1688,3 +1688,18 @@ def get_repair_by_qrcode_full():
             cursor.close()
         if 'connection' in locals() and connection.is_connected():
             connection.close()
+@bp.route('/format_phone', methods=['POST'])
+def format_phone():
+    data = request.json
+    number = data.get('number')
+    country_code = data.get('country_code')
+
+    if not number or not country_code:
+        return jsonify({"error": "Missing 'number' or 'country_code'"}), 400
+
+    formatted = format_number_simple(number, country_code)
+
+    if formatted.startswith("Error") or formatted == "Invalid phone number":
+        return jsonify({"error": formatted}), 400
+
+    return jsonify({"formatted_number": formatted})
