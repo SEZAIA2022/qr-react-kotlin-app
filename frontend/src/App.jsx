@@ -69,7 +69,7 @@ function App() {
       }
     };
 
-    const intervalId = setInterval(checkAuthExpiry, 10 * 1000);
+    const intervalId = setInterval(checkAuthExpiry, 60 * 60 * 1000); 
     checkAuthExpiry();
     return () => clearInterval(intervalId);
   }, [navigate]);
