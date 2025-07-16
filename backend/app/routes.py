@@ -1755,7 +1755,7 @@ def login_web():
             hashed_password = hashed_password.encode('utf-8')
 
         if verify_password(password, hashed_password):
-            role = user[6] if len(user) > 6 else None
+            role = user[7] if len(user) > 7 else None
             application = user[5] if len(user) > 5 else None
             return jsonify({
                 'status': 'success',

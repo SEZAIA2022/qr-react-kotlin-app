@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const QrGenerator = ({ userEmail }) => {
@@ -6,6 +6,15 @@ const QrGenerator = ({ userEmail }) => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [role, setRole] = useState("");
+  const [application, setApplication] = useState("");
+
+  useEffect(() => {
+    const storedRole = localStorage.getItem('userRole') || '';
+    const storedApp = localStorage.getItem('userApplication') || '';
+    setRole(storedRole);
+    setApplication(storedApp);
+  }, []);
 
   const generateQR = async () => {
     const numCount = parseInt(count, 10);
@@ -34,8 +43,14 @@ const QrGenerator = ({ userEmail }) => {
       <h2 style={{ marginBottom: '20px' }}>QR Code generator</h2>
 
       {userEmail && (
-        <p style={{ fontWeight: '600', marginBottom: '15px' }}>
+        <p style={{ fontWeight: '600', marginBottom: '10px' }}>
           Connecté en tant que : <strong>{userEmail}</strong>
+        </p>
+      )}
+
+      {(role || application) && (
+        <p style={{ marginBottom: '20px', fontWeight: '500', color: '#555' }}>
+          Role: <strong>{role || 'N/A'}</strong> — Application: <strong>{application || 'N/A'}</strong>
         </p>
       )}
 
@@ -93,7 +108,6 @@ const QrGenerator = ({ userEmail }) => {
         </div>
       )}
 
-      {/* Styles pour l’animation de fade-in */}
       <style>{`
         img {
           opacity: 0;

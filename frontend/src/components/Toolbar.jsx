@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Toolbar = () => {
+const Toolbar = ({ userApplication }) => {
   const toolbarStyle = {
     width: '100%',
     backgroundColor: '#007bff',
@@ -21,7 +21,7 @@ const Toolbar = () => {
 
   return (
     <div style={toolbarStyle}>
-      SEZAIA
+      {userApplication ? `${userApplication}` : 'SEZAIA REPAIR'}
     </div>
   );
 };

@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  Navigate,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 
 import Toolbar from './components/Toolbar';
 import QuestionForm from './components/QuestionForm';
@@ -11,32 +19,121 @@ import Signup from './components/Signup';
 import Login from './components/Login';
 import VerifyOtp from './components/VerifyOtp';
 
+function AppWrapper() {
+  return (
+    <Router>
+      <App />
+    </Router>
+  );
+}
+
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userEmail, setUserEmail] = useState(null);  // <-- Nouveau state pour email connecté
+  const getInitialAuth = () => {
+    const expiry = localStorage.getItem('authExpiry');
+    const isAuth = localStorage.getItem('isAuthenticated') === 'true';
+    const now = Date.now();
+    if (isAuth && expiry && now < parseInt(expiry, 10)) {
+      return true;
+    } else {
+      localStorage.clear();
+      return false;
+    }
+  };
+
+  const [isAuthenticated, setIsAuthenticated] = useState(getInitialAuth);
+  const [userEmail, setUserEmail] = useState(() => localStorage.getItem('userEmail'));
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('userRole'));
+  const [userApplication, setUserApplication] = useState(() => localStorage.getItem('userApplication'));
   const [otpEmail, setOtpEmail] = useState(null);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const publicPaths = ['/login', '/signup', '/verify-otp'];
+    if (isAuthenticated && publicPaths.includes(location.pathname)) {
+      navigate('/qr-generator', { replace: true });
+    }
+  }, [isAuthenticated, location.pathname, navigate]);
+
+  useEffect(() => {
+    const checkAuthExpiry = () => {
+      const expiry = localStorage.getItem('authExpiry');
+      if (expiry && Date.now() >= parseInt(expiry, 10)) {
+        localStorage.clear();
+        setIsAuthenticated(false);
+        setUserEmail(null);
+        setUserRole(null);
+        setUserApplication(null);
+        navigate('/login', { replace: true });
+      }
+    };
+
+    const intervalId = setInterval(checkAuthExpiry, 10 * 1000);
+    checkAuthExpiry();
+    return () => clearInterval(intervalId);
+  }, [navigate]);
+
+  const handleLogin = (email, role, application) => {
+    setIsAuthenticated(true);
+    setUserEmail(email);
+    setUserRole(role);
+    setUserApplication(application);
+
+    const expiryTime = Date.now() + 60 * 1000; // 1 minute pour test
+    localStorage.setItem('isAuthenticated', 'true');
+    localStorage.setItem('userEmail', email);
+    localStorage.setItem('userRole', role);
+    localStorage.setItem('userApplication', application);
+    localStorage.setItem('authExpiry', expiryTime.toString());
+  };
+
+  const handleLogout = () => {
+    localStorage.clear();
+    setIsAuthenticated(false);
+    setUserEmail(null);
+    setUserRole(null);
+    setUserApplication(null);
+    navigate('/login', { replace: true });
+  };
 
   const PrivateRoute = ({ children }) => {
     return isAuthenticated ? children : <Navigate to="/login" replace />;
   };
 
   return (
-    <Router>
-      <Toolbar />
-      <NavBar isAuthenticated={isAuthenticated} />
+    <>
+      <Toolbar userApplication={userApplication} />
+
+      <NavBar isAuthenticated={isAuthenticated} onLogout={handleLogout} />
       <main style={mainStyle}>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-
-          {/* Auth routes */}
+          <Route
+            path="/"
+            element={<Navigate to={isAuthenticated ? "/qr-generator" : "/login"} replace />}
+          />
           <Route
             path="/login"
-            element={<Login setIsAuthenticated={setIsAuthenticated} setUserEmail={setUserEmail} />}
+            element={
+              isAuthenticated ? (
+                <Navigate to="/qr-generator" replace />
+              ) : (
+                <Login
+                  setIsAuthenticated={(auth, email, role, application) => {
+                    if (auth) {
+                      handleLogin(email, role, application);
+                    }
+                  }}
+                />
+              )
+            }
           />
           <Route
             path="/signup"
             element={
-              otpEmail ? (
+              isAuthenticated ? (
+                <Navigate to="/qr-generator" replace />
+              ) : otpEmail ? (
                 <Navigate to="/verify-otp" replace />
               ) : (
                 <Signup setOtpEmail={setOtpEmail} />
@@ -57,82 +154,42 @@ function App() {
               )
             }
           />
-
-          {/* Private routes */}
           <Route
             path="/qr-generator"
             element={
               <PrivateRoute>
-                <QrGenerator userEmail={userEmail} />
+                <QrGenerator userEmail={userEmail} userRole={userRole} userApplication={userApplication} />
+                
               </PrivateRoute>
             }
           />
-          <Route
-            path="/questions"
-            element={
-              <PrivateRoute>
-                <QuestionForm />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/static_page"
-            element={
-              <PrivateRoute>
-                <StaticPage />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/help_page"
-            element={
-              <PrivateRoute>
-                <HelpPage />
-              </PrivateRoute>
-            }
-          />
-
-          {/* Catch all */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="/questions" element={<PrivateRoute><QuestionForm /></PrivateRoute>} />
+          <Route path="/static_page" element={<PrivateRoute><StaticPage /></PrivateRoute>} />
+          <Route path="/help_page" element={<PrivateRoute><HelpPage /></PrivateRoute>} />
+          <Route path="*" element={<Navigate to={isAuthenticated ? "/qr-generator" : "/login"} replace />} />
         </Routes>
       </main>
-    </Router>
+    </>
   );
 }
 
-// Navbar modifiée pour afficher Logout si connecté
-const NavBar = ({ isAuthenticated }) => {
+const NavBar = ({ isAuthenticated, onLogout }) => {
   const location = useLocation();
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    window.alert("Déconnexion réussie");
-    navigate("/login");
-    window.location.reload();
-  };
 
   return (
     <nav style={navStyle}>
       {isAuthenticated ? (
         <>
-          <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>
-            QR generator
-          </CustomLink>
+          <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>QR generator</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/questions" active={location.pathname === '/questions'}>
-            Questions
-          </CustomLink>
+          <CustomLink to="/questions" active={location.pathname === '/questions'}>Questions</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
-            Static Page
-          </CustomLink>
+          <CustomLink to="/static_page" active={location.pathname === '/static_page'}>Static Page</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/help_page" active={location.pathname === '/help_page'}>
-            Help center
-          </CustomLink>
+          <CustomLink to="/help_page" active={location.pathname === '/help_page'}>Help center</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
           <button
-            onClick={handleLogout}
+            onClick={onLogout}
             style={{
               background: 'transparent',
               border: 'none',
@@ -148,13 +205,9 @@ const NavBar = ({ isAuthenticated }) => {
         </>
       ) : (
         <>
-          <CustomLink to="/login" active={location.pathname === '/login'}>
-            Login
-          </CustomLink>
+          <CustomLink to="/login" active={location.pathname === '/login'}>Login</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/signup" active={location.pathname === '/signup'}>
-            Sign Up
-          </CustomLink>
+          <CustomLink to="/signup" active={location.pathname === '/signup'}>Sign Up</CustomLink>
         </>
       )}
     </nav>
@@ -201,4 +254,4 @@ const mainStyle = {
   minHeight: '70vh',
 };
 
-export default App;
+export default AppWrapper;

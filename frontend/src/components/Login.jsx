@@ -26,10 +26,25 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
     }
 
     try {
-      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/login_web`, { email, password });
-      if (res.data.status === 'success')  {
-        setIsAuthenticated(true);
-        setUserEmail(email);  // <-- Sauvegarde de l'email ici
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/login_web`, {
+        email,
+        password,
+      });
+
+      if (res.data.status === 'success') {
+        const role = res.data.role || '';
+        const application = res.data.application || '';
+        const expiryTime = Date.now() + 60 * 1000; // 1 minute pour test
+
+        // Stocker dans localStorage
+        localStorage.setItem('isAuthenticated', 'true');
+        localStorage.setItem('userEmail', email);
+        localStorage.setItem('userRole', role);
+        localStorage.setItem('userApplication', application);
+        localStorage.setItem('authExpiry', expiryTime.toString());
+
+        // Passer à App.js
+        setIsAuthenticated(true, email, role, application);
         setMessage('');
         navigate('/qr-generator');
       } else {
@@ -78,7 +93,7 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
   );
 };
 
-// Styles identiques à ce que tu avais
+// Styles
 const containerStyle = {
   maxWidth: '400px',
   margin: 'auto',
