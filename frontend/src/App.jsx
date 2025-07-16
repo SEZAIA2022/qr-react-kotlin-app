@@ -1,56 +1,166 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+
 import Toolbar from './components/Toolbar';
 import QuestionForm from './components/QuestionForm';
 import QrGenerator from './components/QrGenerator';
 import StaticPage from './components/StaticPage';
 import HelpPage from './components/HelpPage';
 
+import Signup from './components/Signup';
+import Login from './components/Login';
+import VerifyOtp from './components/VerifyOtp';
+
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState(null);  // <-- Nouveau state pour email connecté
+  const [otpEmail, setOtpEmail] = useState(null);
+
+  const PrivateRoute = ({ children }) => {
+    return isAuthenticated ? children : <Navigate to="/login" replace />;
+  };
+
   return (
     <Router>
       <Toolbar />
-      <NavBar />
+      <NavBar isAuthenticated={isAuthenticated} />
       <main style={mainStyle}>
         <Routes>
-          <Route path="/" element={<Navigate to="/qr-generator" replace />} />
-          <Route path="/qr-generator" element={<QrGenerator />} />
-          <Route path="/questions" element={<QuestionForm />} />
-          <Route path="/static_page" element={<StaticPage />} />
-          <Route path="/help_page" element={<HelpPage />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
+
+          {/* Auth routes */}
+          <Route
+            path="/login"
+            element={<Login setIsAuthenticated={setIsAuthenticated} setUserEmail={setUserEmail} />}
+          />
+          <Route
+            path="/signup"
+            element={
+              otpEmail ? (
+                <Navigate to="/verify-otp" replace />
+              ) : (
+                <Signup setOtpEmail={setOtpEmail} />
+              )
+            }
+          />
+          <Route
+            path="/verify-otp"
+            element={
+              otpEmail ? (
+                <VerifyOtp
+                  email={otpEmail}
+                  setOtpEmail={setOtpEmail}
+                  onVerified={() => setOtpEmail(null)}
+                />
+              ) : (
+                <Navigate to="/signup" replace />
+              )
+            }
+          />
+
+          {/* Private routes */}
+          <Route
+            path="/qr-generator"
+            element={
+              <PrivateRoute>
+                <QrGenerator userEmail={userEmail} />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/questions"
+            element={
+              <PrivateRoute>
+                <QuestionForm />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/static_page"
+            element={
+              <PrivateRoute>
+                <StaticPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/help_page"
+            element={
+              <PrivateRoute>
+                <HelpPage />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Catch all */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </main>
     </Router>
   );
 }
 
-// Composant NavBar pour gestion plus propre des liens
-const NavBar = () => {
+// Navbar modifiée pour afficher Logout si connecté
+const NavBar = ({ isAuthenticated }) => {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    window.alert("Déconnexion réussie");
+    navigate("/login");
+    window.location.reload();
+  };
 
   return (
     <nav style={navStyle}>
-      <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>
-        QR generator
-      </CustomLink>
-      <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/questions" active={location.pathname === '/questions'}>
-        Questions
-      </CustomLink>
-      <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
-        Static Page
-      </CustomLink>
-      <span style={{ margin: '0 8px' }}>|</span>
-      <CustomLink to="/help_page" active={location.pathname === '/help_page'}>
-       Help center
-      </CustomLink>
-      
+      {isAuthenticated ? (
+        <>
+          <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>
+            QR generator
+          </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/questions" active={location.pathname === '/questions'}>
+            Questions
+          </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
+            Static Page
+          </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/help_page" active={location.pathname === '/help_page'}>
+            Help center
+          </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#dc3545',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '16px',
+              marginLeft: '10px',
+            }}
+          >
+            Logout
+          </button>
+        </>
+      ) : (
+        <>
+          <CustomLink to="/login" active={location.pathname === '/login'}>
+            Login
+          </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/signup" active={location.pathname === '/signup'}>
+            Sign Up
+          </CustomLink>
+        </>
+      )}
     </nav>
   );
 };
 
-// Composant lien personnalisé pour style + active state + hover
 const CustomLink = ({ to, active, children }) => {
   const baseStyle = {
     margin: '0 10px',

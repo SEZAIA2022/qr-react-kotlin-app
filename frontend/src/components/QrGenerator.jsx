@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const QrGenerator = () => {
+const QrGenerator = ({ userEmail }) => {
   const [count, setCount] = useState(1);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,7 @@ const QrGenerator = () => {
 
     setErrorMsg("");
     setLoading(true);
-    setResults([]); // Clear previous results while loading
+    setResults([]);
 
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, { count: numCount });
@@ -33,6 +33,12 @@ const QrGenerator = () => {
     <div style={containerStyle}>
       <h2 style={{ marginBottom: '20px' }}>QR Code generator</h2>
 
+      {userEmail && (
+        <p style={{ fontWeight: '600', marginBottom: '15px' }}>
+          Connecté en tant que : <strong>{userEmail}</strong>
+        </p>
+      )}
+
       <div style={inputContainerStyle}>
         <input
           type="number"
@@ -48,7 +54,7 @@ const QrGenerator = () => {
           style={buttonStyle}
           aria-busy={loading}
         >
-          {loading ? "Generate..." : "Generate"}
+          {loading ? "Generating..." : "Generate"}
         </button>
       </div>
 
@@ -87,7 +93,7 @@ const QrGenerator = () => {
         </div>
       )}
 
-      {/* Styles for fade-in animation */}
+      {/* Styles pour l’animation de fade-in */}
       <style>{`
         img {
           opacity: 0;

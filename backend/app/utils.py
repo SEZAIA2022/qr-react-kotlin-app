@@ -31,13 +31,21 @@ def is_valid_password(password: str) -> bool:
         return False
     return True
 
-def send_otp_email(to_email: str, otp: str, sender_email: str, sender_password: str):
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(sender_email, sender_password)
-        message = f"Subject: Votre code OTP\n\nVotre code OTP est : {otp}"
-        server.sendmail(sender_email, to_email, message)
+import logging
 
+def send_otp_email(to_email: str, otp: str, sender_email: str, sender_password: str):
+    try:
+        message = f"Subject: Votre code OTP\n\nVotre code OTP est : {otp}"
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, [to_email], message)  # <--- FIX HERE
+        print(f"[INFO] OTP email sent to {to_email}")
+    except Exception as e:
+        import traceback
+        print("[ERROR] Failed to send OTP email.")
+        print(traceback.format_exc())
+        raise
 
 import vonage
 
@@ -218,3 +226,15 @@ def format_number_simple(number, country_or_prefix):
 
 # def verify_qr_code(qr_code_plain: str, hashed_qr_code: str) -> bool:
 #     return bcrypt.checkpw(qr_code_plain.encode('utf-8'), hashed_qr_code.encode('utf-8'))
+
+import re
+
+def validate_email_format(email: str) -> tuple[str, list]:
+    email_clean = email.strip()
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    errors = []
+
+    if email_clean and not re.match(email_regex, email_clean):
+        errors.append({'field': 'email', 'message': 'Invalid email format.'})
+
+    return email_clean, errors

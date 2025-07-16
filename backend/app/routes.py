@@ -1,5 +1,7 @@
+import hashlib
 import logging
 import smtplib
+import string
 import mysql.connector
 import os
 import random
@@ -18,6 +20,7 @@ from .utils import (
     is_email_taken,
     reset_auto_increment,
     send_otp_sms,
+    validate_email_format,
     verify_password,
     is_valid_password,
     send_otp_email,
@@ -1075,11 +1078,288 @@ def get_taken_slots():
             conn.close()
 
 
+@bp.route('/cancel_appointment', methods=['POST'])
+def cancel_appointment():
+    import traceback
+    try:
+        data = request.get_json()
+        repair_id = data.get('id')
+
+        if not repair_id:
+            return jsonify({'status': 'error', 'message': 'Missing repair id'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Récupérer username et qr_code pour la ligne à supprimer
+        cursor.execute("SELECT username, qr_code FROM ask_repair WHERE id = %s", (repair_id,))
+        result = cursor.fetchone()
+        if not result:
+            return jsonify({'status': 'error', 'message': 'Repair not found'}), 404
+        
+        username, qr_code = result
+
+        # Supprimer la ligne dans ask_repair
+        cursor.execute("DELETE FROM ask_repair WHERE id = %s", (repair_id,))
+
+        # Supprimer les lignes correspondantes dans responses
+        cursor.execute(
+            "DELETE FROM responses WHERE username = %s AND qr_code = %s",
+            (username, qr_code)
+        )
+
+        conn.commit()
+
+        cursor.execute("SELECT MAX(id) FROM responses;")
+        max_id = cursor.fetchone()[0]
+        new_auto_inc = (max_id or 0) + 1
+        cursor.execute(f"ALTER TABLE responses AUTO_INCREMENT = {new_auto_inc};")
+
+        conn.commit()
+
+        cursor.execute("SELECT MAX(id) FROM ask_repair;")
+        max_id = cursor.fetchone()[0]
+        new_auto_inc = (max_id or 0) + 1
+        cursor.execute(f"ALTER TABLE ask_repair AUTO_INCREMENT = {new_auto_inc};")
+
+        conn.commit()
+
+
+        return jsonify({'status': 'success', 'message': 'Appointment and related responses deleted successfully'}), 200
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'status': 'error', 'message': f'Internal server error: {str(e)}'}), 500
+
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+
+@bp.route('/get_qrcodes', methods=['GET'])
+def get_qrcodes():
+    try:
+        connection =get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT qr_code FROM qr_codes WHERE is_active = %s", (1,))
+        results = cursor.fetchall()
+
+
+        qrcodes = [row['qr_code'] for row in results if row['qr_code']]  # Exclut les valeurs nulles
+        return jsonify({'status': 'success', 'qrcodes': qrcodes}), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+            
+
+
+@bp.route('/ask_repair/details/<int:repair_id>', methods=['GET'])
+def get_repair_with_responses(repair_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Récupérer la demande de réparation
+        cursor.execute("""
+            SELECT id, username, date, comment, qr_code, hour_slot, status
+            FROM ask_repair
+            WHERE id = %s
+        """, (repair_id,))
+        repair = cursor.fetchone()
+
+        if not repair:
+            return jsonify({'status': 'error', 'message': 'Demande de réparation non trouvée'}), 404
+
+        # Récupérer toutes les réponses associées à cette demande (responses)
+        cursor.execute("""
+            SELECT response, question_id
+            FROM responses
+            WHERE ask_repair_id = %s
+            ORDER BY question_id ASC
+        """, (repair_id,))
+        responses = cursor.fetchall()
+
+        # Extraire tous les question_id uniques pour récupérer les questions correspondantes
+        question_ids = list({r[1] for r in responses})
+        questions_dict = {}
+
+        if question_ids:
+            format_strings = ','.join(['%s'] * len(question_ids))
+            cursor.execute(f"""
+                SELECT id, text
+                FROM questions
+                WHERE id IN ({format_strings})
+            """, tuple(question_ids))
+            questions = cursor.fetchall()
+            # Construire un dict id -> question_text
+            questions_dict = {q[0]: q[1] for q in questions}
+
+        # Préparer les données de la demande
+        repair_data = {
+            'id': repair[0],
+            'username': repair[1],
+            'date': repair[2].strftime("%A, %d %b %Y") if repair[2] else None,
+            'comment': repair[3],
+            'qr_code': repair[4],
+            'hour_slot': (
+                f"{repair[5].seconds // 3600:02}:{(repair[5].seconds % 3600) // 60:02}:{repair[5].seconds % 60:02}"
+                if repair[5] else None
+            ),
+            'status': repair[6]
+        }
+
+        # Préparer la liste des réponses avec question associée
+        responses_list = []
+        for r in responses:
+            responses_list.append({
+                'response': r[0],
+                'question_id': r[1],
+                'question_text': questions_dict.get(r[1], "Question inconnue")
+            })
+
+        # Retourner un JSON combiné
+        return jsonify({
+            'repair': repair_data,
+            'responses': responses_list
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({'status': 'error', 'message': f'Erreur base de données : {str(err)}'}), 500
+
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@bp.route('/add_description', methods=['POST'])
+def add_description():
+    data = request.json
+
+    repair_id = data.get('id')
+    description = data.get('description_probleme')
+
+    if not repair_id or description is None:
+        return jsonify({
+            'status': 'error',
+            'message': 'Champs id et description_probleme requis'
+        }), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        update_query = """
+            UPDATE ask_repair
+            SET description_probleme = %s,status = 'repaired'
+            WHERE id = %s
+        """
+        cursor.execute(update_query, (description, repair_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'Aucune demande trouvée avec cet ID'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Description mise à jour avec succès'
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({
+            'status': 'error',
+            'message': str(err)
+        }), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+@bp.route('/get_repair_by_qrcode_full', methods=['GET'])
+def get_repair_by_qrcode_full():
+    try:
+        qr_code = request.args.get('qr_code')
+        if not qr_code:
+            return jsonify({'status': 'error', 'message': "Le paramètre 'qr_code' est requis."}), 400
+
+        connection = get_db_connection()
+        cursor = connection.cursor()
+
+        query = "SELECT * FROM ask_repair WHERE qr_code = %s"
+        cursor.execute(query, (qr_code,))
+        results = cursor.fetchall()
+
+        if not results:
+            return jsonify({'status': 'error', 'message': "Aucune donnée trouvée pour ce QR code."}), 404
+
+        # Pour chaque ligne, reconstruire un dict en formatant la date comme dans ton exemple
+        formatted_results = []
+        for row in results:
+            # Exemple : adapter les noms de colonnes selon ta table
+            formatted_row = {
+                'id': row[0],
+                'username': row[1],
+                'date': row[2].strftime("%A, %d %b %Y") if row[2] else None,
+                'comment': row[3],
+                'qr_code': row[4],
+                'hour_slot': (
+                    f"{row[5].seconds // 3600:02}:{(row[5].seconds % 3600) // 60:02}:{row[5].seconds % 60:02}"
+                    if row[5] else None
+                ),
+                'status': row[6],
+                'description_problem': row[7]
+                # ajoute d'autres champs si nécessaire
+            }
+            formatted_results.append(formatted_row)
+
+        return jsonify({'status': 'success', 'data': formatted_results}), 200
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f"Erreur serveur : {str(e)}"}), 500
+
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+@bp.route('/format_phone', methods=['POST'])
+def format_phone():
+    data = request.json
+    number = data.get('number')
+    country_code = data.get('country_code')
+
+    if not number or not country_code:
+        return jsonify({"error": "Missing 'number' or 'country_code'"}), 400
+
+    formatted = format_number_simple(number, country_code)
+
+    if formatted.startswith("Error") or formatted == "Invalid phone number":
+        return jsonify({"error": formatted}), 400
+
+    return jsonify({"formatted_number": formatted})
 
 
 
 
 
+
+
+
+
+
+
+
+#Endpoint for web application react
 
 @bp.route("/generate_qr", methods=["POST"])
 def generate_qr():
@@ -1152,7 +1432,7 @@ def add_question():
 
     return jsonify({"message": "Question ajoutée", "id": question_id}), 201
 
-@bp.route('/questions', methods=['GET'])
+@bp.route('/questions', methods=['GET']) # this is used by application mobile kotlin 
 def get_questions():
     try:
         # Connexion à la base de données MySQL
@@ -1435,271 +1715,198 @@ def delete_help_task(task_id):
 
 
 
-@bp.route('/cancel_appointment', methods=['POST'])
-def cancel_appointment():
-    import traceback
-    try:
-        data = request.get_json()
-        repair_id = data.get('id')
-
-        if not repair_id:
-            return jsonify({'status': 'error', 'message': 'Missing repair id'}), 400
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Récupérer username et qr_code pour la ligne à supprimer
-        cursor.execute("SELECT username, qr_code FROM ask_repair WHERE id = %s", (repair_id,))
-        result = cursor.fetchone()
-        if not result:
-            return jsonify({'status': 'error', 'message': 'Repair not found'}), 404
-        
-        username, qr_code = result
-
-        # Supprimer la ligne dans ask_repair
-        cursor.execute("DELETE FROM ask_repair WHERE id = %s", (repair_id,))
-
-        # Supprimer les lignes correspondantes dans responses
-        cursor.execute(
-            "DELETE FROM responses WHERE username = %s AND qr_code = %s",
-            (username, qr_code)
-        )
-
-        conn.commit()
-
-        cursor.execute("SELECT MAX(id) FROM responses;")
-        max_id = cursor.fetchone()[0]
-        new_auto_inc = (max_id or 0) + 1
-        cursor.execute(f"ALTER TABLE responses AUTO_INCREMENT = {new_auto_inc};")
-
-        conn.commit()
-
-        cursor.execute("SELECT MAX(id) FROM ask_repair;")
-        max_id = cursor.fetchone()[0]
-        new_auto_inc = (max_id or 0) + 1
-        cursor.execute(f"ALTER TABLE ask_repair AUTO_INCREMENT = {new_auto_inc};")
-
-        conn.commit()
 
 
-        return jsonify({'status': 'success', 'message': 'Appointment and related responses deleted successfully'}), 200
+ 
+@bp.route('/login_web', methods=['POST'])
+def login_web():
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': "No data received."}), 400
 
-    except Exception as e:
-        print(traceback.format_exc())
-        return jsonify({'status': 'error', 'message': f'Internal server error: {str(e)}'}), 500
+    email_raw = data.get('email', '')
+    password = data.get('password')
 
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+    email, email_errors = validate_email_format(email_raw)
 
+    if email_errors:
+        return jsonify({'status': 'error', 'errors': email_errors}), 400
 
-@bp.route('/get_qrcodes', methods=['GET'])
-def get_qrcodes():
-    try:
-        connection =get_db_connection()
-        cursor = connection.cursor(dictionary=True)
+    if not password:
+        return jsonify({'status': 'error', 'message': 'Password is required.'}), 400
 
-        cursor.execute("SELECT qr_code FROM qr_codes WHERE is_active = %s", (1,))
-        results = cursor.fetchall()
-
-
-        qrcodes = [row['qr_code'] for row in results if row['qr_code']]  # Exclut les valeurs nulles
-        return jsonify({'status': 'success', 'qrcodes': qrcodes}), 200
-
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
-            
-
-
-@bp.route('/ask_repair/details/<int:repair_id>', methods=['GET'])
-def get_repair_with_responses(repair_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users_web WHERE email=%s", (email,))
+        user = cursor.fetchone()
+    except Exception as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
 
-        # Récupérer la demande de réparation
-        cursor.execute("""
-            SELECT id, username, date, comment, qr_code, hour_slot, status
-            FROM ask_repair
-            WHERE id = %s
-        """, (repair_id,))
-        repair = cursor.fetchone()
+    if not user:
+        return jsonify({'status': 'error', 'message': "Incorrect email or password."}), 404
 
-        if not repair:
-            return jsonify({'status': 'error', 'message': 'Demande de réparation non trouvée'}), 404
+    try:
+        hashed_password = user[2]
+        if isinstance(hashed_password, str):
+            hashed_password = hashed_password.encode('utf-8')
 
-        # Récupérer toutes les réponses associées à cette demande (responses)
-        cursor.execute("""
-            SELECT response, question_id
-            FROM responses
-            WHERE ask_repair_id = %s
-            ORDER BY question_id ASC
-        """, (repair_id,))
-        responses = cursor.fetchall()
+        if verify_password(password, hashed_password):
+            role = user[6] if len(user) > 6 else None
+            application = user[5] if len(user) > 5 else None
+            return jsonify({
+                'status': 'success',
+                'message': "Login successful!",
+                'role': role,
+                'application': application
+            }), 200
+        else:
+            return jsonify({'status': 'error', 'message': "Incorrect email or password."}), 401
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Processing error: {str(e)}'}), 500
 
-        # Extraire tous les question_id uniques pour récupérer les questions correspondantes
-        question_ids = list({r[1] for r in responses})
-        questions_dict = {}
+@bp.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data received.'}), 400
 
-        if question_ids:
-            format_strings = ','.join(['%s'] * len(question_ids))
-            cursor.execute(f"""
-                SELECT id, text
-                FROM questions
-                WHERE id IN ({format_strings})
-            """, tuple(question_ids))
-            questions = cursor.fetchall()
-            # Construire un dict id -> question_text
-            questions_dict = {q[0]: q[1] for q in questions}
+    required_fields = ["email", "city", "country", "application", "password", "confirm_password"]
+    errors = []
 
-        # Préparer les données de la demande
-        repair_data = {
-            'id': repair[0],
-            'username': repair[1],
-            'date': repair[2].strftime("%A, %d %b %Y") if repair[2] else None,
-            'comment': repair[3],
-            'qr_code': repair[4],
-            'hour_slot': (
-                f"{repair[5].seconds // 3600:02}:{(repair[5].seconds % 3600) // 60:02}:{repair[5].seconds % 60:02}"
-                if repair[5] else None
-            ),
-            'status': repair[6]
+    for field in required_fields:
+        if not data.get(field):
+            errors.append({'field': field, 'message': f"The field '{field.replace('_', ' ').capitalize()}' is required."})
+
+    email = data.get("email", "").strip()
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    if email and not re.match(email_regex, email):
+        errors.append({'field': 'email', 'message': 'Invalid email format.'})
+
+    password = data.get("password", "").strip()
+    confirm_password = data.get("confirm_password", "").strip()
+    if not is_valid_password(password):
+        errors.append({'field': 'password', 'message': "Password must be at least 8 characters long, include an uppercase letter, a number, and a special character."})
+    elif password != confirm_password:
+        errors.append({'field': 'confirm_password', 'message': "Passwords do not match."})
+
+    if errors:
+        return jsonify({'status': 'error', 'message': 'Validation errors.', 'errors': errors}), 400
+
+    cursor = None
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM users_web WHERE email = %s", (email,))
+        if cursor.fetchone():
+            return jsonify({'status': 'error', 'message': "Username or email already exists."}), 400
+
+        role = "user"
+
+        otp = str(random.randint(1000, 9999))
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+        password_hash = hash_password(password)
+        if isinstance(password_hash, bytes):
+            password_hash = password_hash.decode('utf-8')
+
+        register_otp_storage[email] = {
+            'email': email,
+            'password_hash': password_hash,
+            'city': data['city'],
+            'country': data['country'],
+            'application': data['application'],
+            'role': role,
+            'otp': otp,
+            'expires_at': expires_at,
+            'attempts': 0
         }
 
-        # Préparer la liste des réponses avec question associée
-        responses_list = []
-        for r in responses:
-            responses_list.append({
-                'response': r[0],
-                'question_id': r[1],
-                'question_text': questions_dict.get(r[1], "Question inconnue")
-            })
+        send_otp_email(email, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
 
-        # Retourner un JSON combiné
-        return jsonify({
-            'repair': repair_data,
-            'responses': responses_list
-        }), 200
+        return jsonify({"message": "OTP sent to your email."}), 200
 
-    except mysql.connector.Error as err:
-        return jsonify({'status': 'error', 'message': f'Erreur base de données : {str(err)}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
 
     finally:
-        if conn.is_connected():
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
 
-@bp.route('/add_description', methods=['POST'])
-def add_description():
-    data = request.json
 
-    repair_id = data.get('id')
-    description = data.get('description_probleme')
+@bp.route('/verify_otp', methods=['POST'])
+def verify_otp():
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided.'}), 400
 
-    if not repair_id or description is None:
-        return jsonify({
-            'status': 'error',
-            'message': 'Champs id et description_probleme requis'
-        }), 400
+    email = data.get('email')
+    otp = data.get('otp')
+
+    if not email or not otp:
+        return jsonify({'status': 'error', 'message': 'Email and OTP are required.'}), 400
+
+    record = register_otp_storage.get(email)
+
+    if not record:
+        return jsonify({'status': 'error', 'message': 'No OTP found for this email.'}), 404
+
+    if datetime.utcnow() > record['expires_at']:
+        return jsonify({'status': 'error', 'message': 'OTP has expired.'}), 400
+
+    if otp != record['otp']:
+        record['attempts'] += 1
+        return jsonify({'status': 'error', 'message': 'Invalid OTP.'}), 400
+
+    # OTP correct, on récupère les infos stockées
+    email = record['email']
+    password_hash = record['password_hash']
+    city = record['city']
+    country = record['country']
+    application = record['application']
+    role = record['role']
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        update_query = """
-            UPDATE ask_repair
-            SET description_probleme = %s,status = 'repaired'
-            WHERE id = %s
-        """
-        cursor.execute(update_query, (description, repair_id))
+        # Vérifier si l'utilisateur existe déjà
+        cursor.execute("SELECT * FROM users_web WHERE email = %s", (email,))
+        existing_user = cursor.fetchone()
+        if existing_user:
+            return jsonify({'status': 'error', 'message': 'User already exists.'}), 400
+
+        # Récupérer le max id existant
+        cursor.execute("SELECT MAX(id) FROM users_web")
+        max_id_result = cursor.fetchone()
+        max_id = max_id_result[0] if max_id_result[0] is not None else 0
+        new_id = max_id + 1
+
+        # Insérer l'utilisateur avec l'id calculé
+        cursor.execute("""
+            INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+        """, (new_id, email, password_hash, city, country, application, role))
+
         conn.commit()
 
-        if cursor.rowcount == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'Aucune demande trouvée avec cet ID'
-            }), 404
-
-        return jsonify({
-            'status': 'success',
-            'message': 'Description mise à jour avec succès'
-        }), 200
-
-    except mysql.connector.Error as err:
-        return jsonify({
-            'status': 'error',
-            'message': str(err)
-        }), 500
-
-    finally:
-        cursor.close()
-        conn.close()
-
-@bp.route('/get_repair_by_qrcode_full', methods=['GET'])
-def get_repair_by_qrcode_full():
-    try:
-        qr_code = request.args.get('qr_code')
-        if not qr_code:
-            return jsonify({'status': 'error', 'message': "Le paramètre 'qr_code' est requis."}), 400
-
-        connection = get_db_connection()
-        cursor = connection.cursor()
-
-        query = "SELECT * FROM ask_repair WHERE qr_code = %s"
-        cursor.execute(query, (qr_code,))
-        results = cursor.fetchall()
-
-        if not results:
-            return jsonify({'status': 'error', 'message': "Aucune donnée trouvée pour ce QR code."}), 404
-
-        # Pour chaque ligne, reconstruire un dict en formatant la date comme dans ton exemple
-        formatted_results = []
-        for row in results:
-            # Exemple : adapter les noms de colonnes selon ta table
-            formatted_row = {
-                'id': row[0],
-                'username': row[1],
-                'date': row[2].strftime("%A, %d %b %Y") if row[2] else None,
-                'comment': row[3],
-                'qr_code': row[4],
-                'hour_slot': (
-                    f"{row[5].seconds // 3600:02}:{(row[5].seconds % 3600) // 60:02}:{row[5].seconds % 60:02}"
-                    if row[5] else None
-                ),
-                'status': row[6],
-                'description_problem': row[7]
-                # ajoute d'autres champs si nécessaire
-            }
-            formatted_results.append(formatted_row)
-
-        return jsonify({'status': 'success', 'data': formatted_results}), 200
-
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f"Erreur serveur : {str(e)}"}), 500
+        return jsonify({'status': 'error', 'message': f'Database error: {str(e)}'}), 500
 
     finally:
-        if 'cursor' in locals():
+        if cursor:
             cursor.close()
-        if 'connection' in locals() and connection.is_connected():
-            connection.close()
-@bp.route('/format_phone', methods=['POST'])
-def format_phone():
-    data = request.json
-    number = data.get('number')
-    country_code = data.get('country_code')
+        if conn:
+            conn.close()
 
-    if not number or not country_code:
-        return jsonify({"error": "Missing 'number' or 'country_code'"}), 400
+    # Suppression du stockage après inscription réussie
+    register_otp_storage.pop(email, None)
 
-    formatted = format_number_simple(number, country_code)
-
-    if formatted.startswith("Error") or formatted == "Invalid phone number":
-        return jsonify({"error": formatted}), 400
-
-    return jsonify({"formatted_number": formatted})
+    return jsonify({'status': 'success', 'message': 'OTP verified and user registered successfully.'}), 200

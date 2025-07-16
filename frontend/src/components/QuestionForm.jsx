@@ -13,12 +13,24 @@ const QuestionForm = () => {
   const fetchQuestions = async () => {
     try {
       const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`);
-      setQuestions(res.data);
+      console.log("Réponse API:", res.data);
+
+      // Sécurité : vérifier que la donnée est bien un tableau
+      if (Array.isArray(res.data)) {
+        setQuestions(res.data);
+      } else if (res.data && Array.isArray(res.data.questions)) {
+        setQuestions(res.data.questions);
+      } else {
+        console.error("Format de réponse inattendu:", res.data);
+        setQuestions([]);
+      }
+
       setSelected({});
       setEditId(null);
       setEditText('');
     } catch (error) {
-      setMessage('Error loading questions.');
+      console.error("Erreur fetchQuestions:", error);
+      setMessage('❌ Error loading questions.');
     }
   };
 
@@ -26,21 +38,19 @@ const QuestionForm = () => {
     fetchQuestions();
   }, []);
 
-  // Ajouter une question
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!text.trim()) return;
     try {
       await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, { text });
-      setMessage('✅ Question successfully added !');
+      setMessage('✅ Question successfully added!');
       setText('');
       fetchQuestions();
     } catch (error) {
-      setMessage("❌ Error adding.");
+      setMessage("❌ Error adding question.");
     }
   };
 
-  // Gérer la sélection des checkboxes
   const toggleSelect = (id) => {
     setSelected((prev) => ({
       ...prev,
@@ -48,7 +58,6 @@ const QuestionForm = () => {
     }));
   };
 
-  // Supprimer plusieurs questions sélectionnées
   const deleteSelected = async () => {
     const idsToDelete = Object.entries(selected)
       .filter(([_, isChecked]) => isChecked)
@@ -68,34 +77,30 @@ const QuestionForm = () => {
       setMessage(`✅ ${idsToDelete.length} question(s) successfully deleted.`);
       fetchQuestions();
     } catch (error) {
-      setMessage('Error when deleting questions.');
+      setMessage('❌ Error deleting questions.');
     }
   };
 
-  // Supprimer une seule question
   const deleteQuestion = async (id) => {
     try {
       await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
       setMessage('✅ Question successfully deleted.');
       fetchQuestions();
     } catch (error) {
-      setMessage('Error deleting question.');
+      setMessage('❌ Error deleting question.');
     }
   };
 
-  // Démarrer l'édition
   const startEditing = (id, currentText) => {
     setEditId(id);
     setEditText(currentText);
   };
 
-  // Annuler édition
   const cancelEditing = () => {
     setEditId(null);
     setEditText('');
   };
 
-  // Sauvegarder édition
   const saveEdit = async () => {
     if (!editText.trim()) {
       setMessage('Text cannot be empty.');
@@ -110,7 +115,7 @@ const QuestionForm = () => {
       setEditText('');
       fetchQuestions();
     } catch (error) {
-      setMessage('Error during modification.');
+      setMessage('❌ Error editing question.');
     }
   };
 
@@ -142,7 +147,7 @@ const QuestionForm = () => {
       </button>
 
       <ul style={listStyle}>
-        {questions.map(({ id, text }) => (
+        {Array.isArray(questions) && questions.map(({ id, text }) => (
           <li
             key={id}
             className="question-item"
@@ -155,7 +160,7 @@ const QuestionForm = () => {
               checked={!!selected[id]}
               onChange={() => toggleSelect(id)}
               style={checkboxStyle}
-              aria-label={`Sélectionner la question ${id}`}
+              aria-label={`Select question ${id}`}
             />
 
             {editId === id ? (
@@ -166,45 +171,20 @@ const QuestionForm = () => {
                   onChange={(e) => setEditText(e.target.value)}
                   style={textareaEditStyle}
                 />
-                <button
-                  onClick={saveEdit}
-                  className="question-icon-button"
-                  title="Save"
-                  style={{ marginRight: '8px' }}
-                >
-                  💾
-                </button>
-                <button
-                  onClick={cancelEditing}
-                  className="question-icon-button"
-                  title="Cancel"
-                >
-                  ✖️
-                </button>
+                <button onClick={saveEdit} style={iconButtonBase}>💾</button>
+                <button onClick={cancelEditing} style={iconButtonBase}>✖️</button>
               </>
             ) : (
               <>
                 <span style={questionTextStyle}>{text}</span>
-
-                <button
-                  onClick={() => startEditing(id, text)}
-                  className="question-icon-button"
-                  aria-label={`Éditer la question ${id}`}
-                  title="Edit"
-                  style={{ marginRight: '10px' }}
-                >
-                  ✏️
-                </button>
-
+                <button onClick={() => startEditing(id, text)} style={iconButtonBase}>✏️</button>
                 <button
                   onClick={() => {
                     if (window.confirm("Do you really want to delete this question ?")) {
                       deleteQuestion(id);
                     }
                   }}
-                  className="question-icon-button"
-                  aria-label={`Supprimer la question ${id}`}
-                  title="Delete"
+                  style={iconButtonBase}
                 >
                   🗑️
                 </button>
@@ -218,7 +198,6 @@ const QuestionForm = () => {
 };
 
 // Styles
-
 const containerStyle = {
   maxWidth: '600px',
   margin: '20px auto',
@@ -319,12 +298,5 @@ const iconButtonBase = {
   borderRadius: '6px',
   transition: 'background-color 0.3s, color 0.3s',
 };
-
-const iconButtonHover = {
-  backgroundColor: '#007bff',
-  color: '#fff',
-};
-
-// On applique iconButtonBase pour chaque bouton, inline style dans JSX ci-dessus.
 
 export default QuestionForm;
