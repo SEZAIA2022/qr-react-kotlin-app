@@ -38,14 +38,14 @@ def login():
     
     username = data.get('username')
     password = data.get('password')
-
+    application = data.get('application_name')
     if not username or not password:
         return jsonify({'status': 'error', 'message': 'Username or email and password required.'}), 400
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username=%s OR email=%s", (username, username))
+        cursor.execute("SELECT * FROM users WHERE (username = %s OR email = %s) AND application = %s", (username, username, application))
         users = cursor.fetchone()
     except Exception as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
@@ -77,7 +77,7 @@ def register():
     if not data:
         return jsonify({'status': 'error', 'message': 'No data received.'}), 400
 
-    required_fields = ["username", "email", "password", "confirm_password", "number", "address", "country_code", "city", "postal_code"]
+    required_fields = ["username", "email", "password", "confirm_password", "number", "address", "country_code", "city", "postal_code", "application_name"]
     errors = []
 
     for field in required_fields:
@@ -103,11 +103,11 @@ def register():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM users WHERE username = %s OR email = %s", (data["username"], data["email"]))
+        cursor.execute("SELECT * FROM users WHERE (username = %s OR email = %s) AND application = %s", (data["username"], data["email"], data.get("application_name")))
         if cursor.fetchone():
             return jsonify({'status': 'error', 'message': "Username or email already exists."}), 400
 
-        cursor.execute("SELECT * FROM registred_users WHERE username = %s OR email = %s", (data["username"], data["email"]))
+        cursor.execute("SELECT * FROM registred_users WHERE (username = %s OR email = %s) AND application = %s", (data["username"], data["email"], data.get("application_name")))
         user_registred = cursor.fetchone()
         if not user_registred:
             return jsonify({'status': 'error', 'message': "Username or email can't be used."}), 400
@@ -129,6 +129,7 @@ def register():
             'city': data['city'],
             'country_code': data['country_code'],
             'role': role,
+            'application': data["application_name"],
             'otp': otp,
             'expires_at': expires_at,
             'attempts': 0
@@ -156,7 +157,7 @@ def verify_register():
     otp = data.get('otp')
     email = data.get('email')
     if not otp or not email:
-        return jsonify({'status': 'error', 'message': 'OTP and email are required.'}), 400
+        return jsonify({'status': 'error', 'message': 'Please enter the complete code'}), 400
 
     record = register_otp_storage.get(email)
     if not record:
@@ -181,8 +182,8 @@ def verify_register():
 
         cursor.execute("""
             INSERT INTO users 
-                (username, email, password_hash, phone_number, address, role, city, code_postal)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (username, email, password_hash, phone_number, address, role, city, code_postal, application)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             record['username'],
             record['email'],
@@ -191,7 +192,8 @@ def verify_register():
             record['address'],
             record['role'],
             record['city'],
-            record['postal_code']
+            record['postal_code'],
+            record['application']
 
         ))
         conn.commit()
@@ -201,33 +203,38 @@ def verify_register():
         return jsonify({'status': 'success', 'message': 'User successfully verified and registered.'}), 200
 
     except Exception as e:
+        print(str(e))
         return jsonify({'status': 'error', 'message': str(e)}), 500
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
 
 
-import vonage
-client = vonage.Client(key="VOTRE_API_KEY", secret="VOTRE_API_SECRET")
+# import vonage
+# client = vonage.Client(key="VOTRE_API_KEY", secret="VOTRE_API_SECRET")
 
 @bp.route('/forgot_password', methods=['POST'])
 def forgot_password():
     data = request.get_json()
-    contact = data.get('email')  # ici, c'est le contact (email ou téléphone) envoyé par le client
+    if not data:
+        return jsonify({'status': 'error', 'message': "No data received."}), 400
 
+    contact = data.get('email')  # contact peut être email ou téléphone
+    application = data.get("application_name")
     if not contact:
         return jsonify({'status': 'error', 'message': "Email or phone is required."}), 400
+    if not application:
+        return jsonify({'status': 'error', 'message': "Application name is required."}), 400
 
-    user = get_user_by_contact(contact)
+    user = get_user_by_contact(contact, application)
     if not user:
         return jsonify({'status': 'error', 'message': "User not found."}), 404
 
     contact_type = user.get("contact_type")
-    # On récupère l'email si c'est un email, sinon téléphone
     if contact_type == 'email':
         user_contact = user.get('email')
-    elif contact_type == 'phone':
-        user_contact = user.get('phone_number')
+    # elif contact_type == 'phone':
+    #     user_contact = user.get('phone_number')
     else:
         return jsonify({'status': 'error', 'message': "Invalid contact type."}), 400
 
@@ -242,15 +249,21 @@ def forgot_password():
 
     try:
         if contact_type == 'email':
-            send_otp_email(user_contact, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
+            send_otp_email(
+                user_contact,
+                otp,
+                current_app.config['EMAIL_SENDER'],
+                current_app.config['EMAIL_PASSWORD']
+            )
             message = "OTP sent to your email."
-        else:
-            send_otp_sms(client, user_contact, otp, "houss")
-            message = "OTP sent to your phone."
+        # else:
+        #     send_otp_sms(client, user_contact, otp, "houss")
+        #     message = "OTP sent to your phone."
 
         return jsonify({'status': 'success', 'message': message})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
+
 
 
 
@@ -260,13 +273,13 @@ def verify_forget():
     data = request.get_json()
     otp = data.get('otp')
     email = data.get('email')
-    user = get_user_by_contact(email)
+    application = data.get('application_name')
+    user = get_user_by_contact(email, application)
     if not user:
         return jsonify({'status': 'error', 'message': "User not found."}), 404
     email = user['email']
-    print(f"email: {email}")  # DEBUG: Afficher l'email reçu
     if not otp or not email:
-        return jsonify({'status': 'error', 'message': "OTP and email/username are required."}), 400
+        return jsonify({'status': 'error', 'message': "Please enter the complete code"}), 400
 
     record = otp_storage.get(user["email"])
     if not record:
@@ -296,42 +309,48 @@ def resend_otp():
     data = request.get_json()
     email = data.get('email')
     previous_page = data.get('previous_page')
+    application = data.get('application_name')
 
     if not email:
         return jsonify({'status': 'error', 'message': "Email is required."}), 400
 
-    user = get_user_by_contact(email)
+    user = get_user_by_contact(email, application)
+    if not user:
+        return jsonify({'status': 'error', 'message': "User not found."}), 404
+
+    user_email = user.get('email')
+    if not user_email:
+        return jsonify({'status': 'error', 'message': "User email not found."}), 400
+
     new_otp = str(random.randint(1000, 9999))
     expires_at = datetime.utcnow() + timedelta(minutes=5)
 
-    if user:
-        if previous_page == "SignUpActivity":
-            # Mise à jour register_otp_storage
-            record = register_otp_storage.get(email)
-            if not record:
-                return jsonify({'status': 'error', 'message': "User not found in registration storage."}), 404
-            record['otp'] = new_otp
-            record['expires_at'] = expires_at
-            record['attempts'] = 0
-            print(f"[DEBUG] OTP updated in register_otp_storage for {email}: {register_otp_storage[email]}")
-        else:
-            # Mise à jour otp_storage
-            old_record = otp_storage.get(email, {})
-            otp_storage[user["email"]] = {
-                'otp': new_otp,
-                'expires_at': expires_at,
-                'attempts': 0,
-                'new_email': old_record.get('new_email')
-            }
-            print(f"[DEBUG] OTP updated in otp_storage for {user['email']}: {otp_storage[user['email']]}")
+    if previous_page == "SignUpActivity":
+        record = register_otp_storage.get(user_email)
+        if not record:
+            return jsonify({'status': 'error', 'message': "User not found in registration storage."}), 404
+        record['otp'] = new_otp
+        record['expires_at'] = expires_at
+        record['attempts'] = 0
+        print(f"[DEBUG] OTP updated in register_otp_storage for {user_email}: {register_otp_storage[user_email]}")
+    else:
+        old_record = otp_storage.get(user_email, {})
+        otp_storage[user_email] = {
+            'otp': new_otp,
+            'expires_at': expires_at,
+            'attempts': 0,
+            'new_email': old_record.get('new_email')
+        }
+        print(f"[DEBUG] OTP updated in otp_storage for {user_email}: {otp_storage[user_email]}")
 
     try:
-        send_otp_email(user['email'], new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
-        print(f"[INFO] New OTP sent to {email}: {new_otp}")
+        send_otp_email(user_email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
+        print(f"[INFO] New OTP sent to {user_email}: {new_otp}")
         return jsonify({'status': 'success', 'message': "New OTP sent to your email."}), 200
     except Exception as e:
         print("Error sending OTP:", str(e))
         return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
+
 
 @bp.route('/send_ask_and_response', methods=['POST'])
 def send_ask_and_response():
@@ -408,6 +427,7 @@ def send_ask_and_response():
 def change_password_forget():
     data = request.json
     email = data.get('email')
+    application = data.get('application_name')
     new_password = data.get('new_password')
     confirm_password = data.get('confirm_password')
 
@@ -427,18 +447,11 @@ def change_password_forget():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = %s OR username = %s", (email, email))
-        user = cursor.fetchone()
-
-        if user:
-            cursor.execute("""
-                UPDATE users SET password_hash = %s WHERE email = %s OR username = %s
-            """, (hashed_password, email, email))
-            conn.commit()
-            return jsonify({'message': 'Password updated successfully!'}), 200
-        else:
-            return jsonify({'status': 'error', 'message': 'Email not found.'}), 404
-
+        cursor.execute("""
+            UPDATE users SET password_hash = %s WHERE (email = %s OR username = %s) and application = %s
+        """, (hashed_password, email, email, application))
+        conn.commit()
+        return jsonify({'message': 'Password updated successfully!'}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1640,9 +1653,13 @@ def update_privacy_policy():
 # 📘 GET : récupérer toutes les tâches help (id, title_help, help)
 @bp.route('/help_tasks', methods=['GET'])
 def get_help_tasks():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, title_help, help FROM help_tasks ORDER BY id ASC")
+    cursor.execute(
+        "SELECT id, title_help, help FROM help_tasks WHERE application = %s ORDER BY id ASC",
+        (application,)
+    )
     tasks = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1691,16 +1708,17 @@ def add_help_task():
     data = request.get_json()
     title_help = data.get('title_help', '').strip()
     help_text = data.get('help', '').strip()
-
+    application = data.get('application', '')
     if not title_help or not help_text:
         return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO help_tasks (title_help, help) VALUES (%s, %s)",
-        (title_help, help_text)
+        "INSERT INTO help_tasks (title_help, help, application) VALUES (%s, %s, %s)",
+        (title_help, help_text, application)
     )
+
     conn.commit()
     new_id = cursor.lastrowid
     cursor.close()

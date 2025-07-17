@@ -93,77 +93,84 @@ def is_email_taken(new_email):
             conn.close()
 
 # 🔍 Recherche l'utilisateur par email ou username
-def get_user_by_contact(data):
+import re
+
+def get_user_by_contact(data, application):
     if isinstance(data, str):
         data = {"contact": data}
 
     contact = data.get("contact", "").strip()
-    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
-
     if contact == "":
         return None
 
-    if re.match(email_regex, contact):
-        user = None
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            query = "SELECT id, username, email FROM users WHERE email = %s OR username = %s"
-            cursor.execute(query, (contact, contact))
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    user = None
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if re.match(email_regex, contact):
+            query = """
+                SELECT id, username, email 
+                FROM users 
+                WHERE (email = %s OR username = %s) 
+                AND application = %s
+                LIMIT 1
+            """
+            cursor.execute(query, (contact, contact, application))
             row = cursor.fetchone()
             if row:
                 user = {
                     'id': row[0],
                     'username': row[1],
                     'email': row[2],
-                    'contact_type': 'email'   # ajouté ici
+                    'contact_type': 'email'
                 }
-        except Exception as e:
-            print(f"Database error: {e}")
-            return {"errors": [{"message": "Database error."}]}
-        finally:
+        else:
+            # Décommenter cette partie si tu veux gérer les numéros de téléphone
+            # query = """
+            #     SELECT id, phone_number 
+            #     FROM users 
+            #     WHERE phone_number = %s 
+            #     AND application = %s
+            #     LIMIT 1
+            # """
+            # cursor.execute(query, (contact, application))
+            # row = cursor.fetchone()
+            # if row:
+            #     user = {
+            #         'id': row[0],
+            #         'phone_number': row[1],
+            #         'contact_type': 'phone'
+            #     }
+            pass
+
+    except Exception as e:
+        print(f"Database error: {e}")
+        return {"errors": [{"message": "Database error."}]}
+    finally:
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
 
-        if user:
-            return user
+    if user:
+        return user
 
-        record = register_otp_storage.get(contact)
-        if record:
-            return {
-                'id': None,
-                'username': record['username'],
-                'email': record['email'],
-                'contact_type': 'email'
-            }
-
-    else:
-        user = None
-        phone_number = contact
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            query = "SELECT id, phone_number FROM users WHERE phone_number = %s"
-            cursor.execute(query, (phone_number,))
-            row = cursor.fetchone()
-            if row:
-                user = {
-                    'id': row[0],
-                    'phone_number': row[1],
-                    'contact_type': 'phone'   # ajouté ici
-                }
-        except Exception as e:
-            print(f"Database error: {e}")
-            return {"errors": [{"message": "Database error."}]}
-        finally:
-            cursor.close()
-            conn.close()
-
-        if user:
-            return user
+    # Recherche dans register_otp_storage si utilisateur temporaire (ex: en cours d'inscription)
+    record = register_otp_storage.get(contact)
+    if record:
+        return {
+            'id': None,
+            'username': record.get('username'),
+            'email': record.get('email'),
+            'contact_type': 'email'  # ou 'phone' si tu gères les téléphones
+        }
 
     return None
-
 
 
 

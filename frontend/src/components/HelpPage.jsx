@@ -14,7 +14,7 @@ function useWindowWidth() {
 const HelpPage = () => {
   const width = useWindowWidth();
   const isMobile = width < 480;
-
+  const [application, setApplication] = useState('');
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [error, setError] = useState('');
@@ -24,23 +24,34 @@ const HelpPage = () => {
   const [addMessage, setAddMessage] = useState('');
   const [addLoading, setAddLoading] = useState(false);
 
+  useEffect(() => {
+    const storedApp = localStorage.getItem('userApplication');
+    if (storedApp) {
+      setApplication(storedApp);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (application && application.trim() !== '') {
+      fetchTasks();
+    }
+  }, [application]);
+
   const fetchTasks = async () => {
     setLoadingTasks(true);
     setError('');
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/help_tasks`);
-      setTasks(res.data.tasks || []);
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/help_tasks`, {
+        params: { application },
+      });
+      setTasks(res.data.tasks);
     } catch (err) {
       console.error(err);
-      setError('❌ Failed to load help tasks.');
+      setError(`❌ Failed to load help tasks: ${err.response?.data?.error || err.message}`);
     } finally {
       setLoadingTasks(false);
     }
   };
-
-  useEffect(() => {
-    fetchTasks();
-  }, []);
 
   const updateTask = async (id, newTitle, newContent) => {
     await axios.put(`${process.env.REACT_APP_API_URL}/api/help_tasks/${id}`, {
@@ -74,6 +85,7 @@ const HelpPage = () => {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/help_tasks`, {
         title_help: newTitle.trim(),
         help: newContent.trim(),
+        application: application,
       });
       const task = res.data.task || res.data;
       setTasks(prev => [...prev, task]);
@@ -258,10 +270,10 @@ const HelpTaskItem = ({ task, onSave, onDelete }) => {
                 userSelect: 'none',
                 marginBottom: '8px',
                 fontWeight: '700',
-                paddingRight: '20px',  // pour espace à droite pour la flèche
+                paddingRight: '20px',
             }}
             title="Click to toggle description"
-            >
+          >
             {title}
             <span
                 style={{
@@ -279,7 +291,7 @@ const HelpTaskItem = ({ task, onSave, onDelete }) => {
             >
                 ▶
             </span>
-            </h3>
+          </h3>
           {showContent && <p>{content}</p>}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button onClick={() => setIsEditing(true)} style={styles.editButton}>
@@ -304,7 +316,6 @@ const HelpTaskItem = ({ task, onSave, onDelete }) => {
     </div>
   );
 };
-
 
 const styles = {
   container: {
