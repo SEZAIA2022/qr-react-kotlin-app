@@ -2,25 +2,42 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const EditableTextSection = ({ apiKey, title }) => {
+  const [application, setApplication] = useState('');
   const [text, setText] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editedText, setEditedText] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Récupère l'application depuis le localStorage
+  useEffect(() => {
+    const storedApp = localStorage.getItem('userApplication');
+    if (storedApp) {
+      setApplication(storedApp);
+    }
+  }, []);
+
+  // Récupère le texte de l'API une fois que l'application est connue
+  useEffect(() => {
+    if (application && application.trim() !== '') {
+      fetchText();
+    }
+  }, [application, apiKey]);
+
   const fetchText = async () => {
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/${apiKey}`);
+      const res = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/${apiKey}`,
+        { params: { application } }
+      );
       setText(res.data[apiKey]);
     } catch (err) {
       console.error(err);
-      setMessage(`❌ Failed to load "${title}" text: ${err.response?.data?.message || err.message}`);
+      setMessage(
+        `❌ Failed to load "${title}" text: ${err.response?.data?.message || err.message}`
+      );
     }
   };
-
-  useEffect(() => {
-    fetchText();
-  }, [apiKey]);
 
   const handleEdit = () => {
     setEditMode(true);
@@ -36,12 +53,17 @@ const EditableTextSection = ({ apiKey, title }) => {
 
   const handleSave = async () => {
     if (!editedText.trim()) {
-      setMessage("❌ Text cannot be empty.");
+      setMessage('❌ Text cannot be empty.');
       return;
     }
+
     setLoading(true);
     try {
-      await axios.put(`${process.env.REACT_APP_API_URL}/api/${apiKey}`, { [apiKey]: editedText });
+      await axios.put(
+        `${process.env.REACT_APP_API_URL}/api/${apiKey}`,
+        { [apiKey]: editedText },
+        { params: { application } }
+      );
       setText(editedText);
       setEditMode(false);
       setMessage(`✅ "${title}" text updated successfully.`);
@@ -101,8 +123,7 @@ const EditableTextSection = ({ apiKey, title }) => {
   );
 };
 
-// Styles (identiques à ton composant AboutUs)
-
+// Styles inchangés
 const containerStyle = {
   maxWidth: '720px',
   margin: '50px auto',

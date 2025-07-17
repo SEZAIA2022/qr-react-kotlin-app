@@ -28,7 +28,7 @@ const QrGenerator = ({ userEmail }) => {
     setResults([]);
 
     try {
-      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, { count: numCount });
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, { count: numCount, application: application });
       setResults(res.data);
     } catch (error) {
       console.error("Error generating QR codes :", error);

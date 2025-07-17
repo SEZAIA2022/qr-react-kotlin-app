@@ -1365,6 +1365,7 @@ def format_phone():
 def generate_qr():
     data = request.get_json()
     count = int(data.get("count", 1))
+    application = data.get("application", "")
     qr_list = []
 
     conn = get_db_connection()
@@ -1385,9 +1386,9 @@ def generate_qr():
             current_id += 1  # Incrémente l'ID localement
 
             cursor.execute("""
-                INSERT INTO qr_codes (id, qr_code, is_active)
-                VALUES (%s, %s, %s)
-            """, (current_id, code, 0))
+                INSERT INTO qr_codes (id, qr_code, is_active, application)
+                VALUES (%s, %s, %s, %s)
+            """, (current_id, code, 0, application))
 
             conn.commit()
 
@@ -1413,45 +1414,61 @@ def generate_qr():
     return jsonify(qr_list), 201
 
 
-
 @bp.route("/questions", methods=["POST"])
 def add_question():
     data = request.get_json()
     text = data.get("text", "")
-
+    application = data.get("application", "")
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("INSERT INTO questions (text) VALUES (%s)", (text,))
-    conn.commit()
+    # Récupérer le max id actuel
+    cursor.execute("SELECT MAX(id) FROM questions")
+    max_id = cursor.fetchone()[0]
+    if max_id is None:
+        max_id = 0
+    new_id = max_id + 1
 
-    question_id = cursor.lastrowid
+    # Insérer la question avec l'id spécifié
+    cursor.execute(
+        "INSERT INTO questions (id, text, application) VALUES (%s, %s, %s)",
+        (new_id, text, application)
+    )
+    conn.commit()
 
     cursor.close()
     conn.close()
 
-    return jsonify({"message": "Question ajoutée", "id": question_id}), 201
+    return jsonify({"message": "Question ajoutée", "id": new_id}), 201
 
-@bp.route('/questions', methods=['GET']) # this is used by application mobile kotlin 
+
+@bp.route('/questions', methods=['GET'])  # utilisé par l'application mobile Kotlin
 def get_questions():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
+
     try:
-        # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM questions")
+
+        if application:
+            cursor.execute("SELECT id, text FROM questions WHERE application = %s", (application,))
+        else:
+            cursor.execute("SELECT id, text FROM questions")
+
         questions = cursor.fetchall()
 
-        # Créer une liste de dictionnaires pour retourner les questions et leurs IDs
-        questions_list = [{'id': row[0],'text': row[1]} for row in questions]
+        # Retourne une liste de dictionnaires avec les questions
+        questions_list = [{'id': row[0], 'text': row[1]} for row in questions]
 
-        return jsonify(questions_list)  # Retourne les questions sous forme de liste de dictionnaires
+        return jsonify(questions_list)
 
     except mysql.connector.Error as err:
-        return jsonify({'status': 'error', 'message': f'Database error:{str(err)}'}), 500
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
     finally:
         if conn:
             cursor.close()
             conn.close()
+
 
 @bp.route('/delete_question/<int:question_id>', methods=['DELETE'])
 def delete_question(question_id):
@@ -1513,10 +1530,11 @@ def update_question(question_id):
 # 📘 GET: Récupérer le champ about_us
 @bp.route('/about_us', methods=['GET'])
 def get_about_us():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("SELECT about_us FROM static_pages WHERE id = 1")
+    cursor.execute("SELECT about_us FROM static_pages WHERE application = %s", (application, ))
     result = cursor.fetchone()
 
     cursor.close()
@@ -1530,6 +1548,7 @@ def get_about_us():
 # ✏️ PUT: Modifier le champ about_us
 @bp.route('/about_us', methods=['PUT'])
 def update_about_us():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
     data = request.get_json()
     new_text = data.get('about_us', '').strip()
 
@@ -1539,7 +1558,7 @@ def update_about_us():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("UPDATE static_pages SET about_us = %s WHERE id = 1", (new_text,))
+    cursor.execute("UPDATE static_pages SET about_us = %s WHERE application = %s", (new_text, application))
     conn.commit()
 
     cursor.close()
@@ -1550,9 +1569,10 @@ def update_about_us():
 # 📘 GET: Récupérer le champ term_of_use
 @bp.route('/term_of_use', methods=['GET'])
 def get_term_of_use():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT term_of_use FROM static_pages WHERE id = 1")
+    cursor.execute("SELECT term_of_use FROM static_pages WHERE application = %s", (application, ))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -1567,13 +1587,14 @@ def get_term_of_use():
 def update_term_of_use():
     data = request.get_json()
     new_text = data.get('term_of_use', '').strip()
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
 
     if not new_text:
         return jsonify({"error": "Text is required"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE static_pages SET term_of_use = %s WHERE id = 1", (new_text,))
+    cursor.execute("UPDATE static_pages SET term_of_use = %s WHERE application = %s", (new_text, application))
     conn.commit()
     cursor.close()
     conn.close()
@@ -1584,9 +1605,10 @@ def update_term_of_use():
 # 📘 GET: Récupérer le champ privacy_policy
 @bp.route('/privacy_policy', methods=['GET'])
 def get_privacy_policy():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT privacy_policy FROM static_pages WHERE id = 1")
+    cursor.execute("SELECT privacy_policy FROM static_pages WHERE application = %s", (application, ))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -1599,6 +1621,7 @@ def get_privacy_policy():
 # ✏️ PUT: Modifier le champ privacy_policy
 @bp.route('/privacy_policy', methods=['PUT'])
 def update_privacy_policy():
+    application = request.args.get('application')  # Récupère le paramètre ?application=...
     data = request.get_json()
     new_text = data.get('privacy_policy', '').strip()
 
@@ -1607,7 +1630,7 @@ def update_privacy_policy():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE static_pages SET privacy_policy = %s WHERE id = 1", (new_text,))
+    cursor.execute("UPDATE static_pages SET privacy_policy = %s WHERE application = %s", (new_text, application))
     conn.commit()
     cursor.close()
     conn.close()
@@ -1712,12 +1735,6 @@ def delete_help_task(task_id):
     return jsonify({"message": "✅ Tâche supprimée avec succès."})
 
 
-
-
-
-
-
- 
 @bp.route('/login_web', methods=['POST'])
 def login_web():
     data = request.get_json()
@@ -1840,7 +1857,6 @@ def signup():
         if conn:
             conn.close()
 
-
 @bp.route('/verify_otp', methods=['POST'])
 def verify_otp():
     data = request.get_json()
@@ -1889,11 +1905,17 @@ def verify_otp():
         max_id = max_id_result[0] if max_id_result[0] is not None else 0
         new_id = max_id + 1
 
-        # Insérer l'utilisateur avec l'id calculé
+        # Insérer l'utilisateur
         cursor.execute("""
             INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
         """, (new_id, email, password_hash, city, country, application, role))
+
+        # ✅ Insérer aussi dans static_pages
+        cursor.execute("""
+            INSERT INTO static_pages (application)
+            VALUES (%s)
+        """, (application,))
 
         conn.commit()
 
@@ -1906,7 +1928,7 @@ def verify_otp():
         if conn:
             conn.close()
 
-    # Suppression du stockage après inscription réussie
+    # Suppression du stockage temporaire OTP après succès
     register_otp_storage.pop(email, None)
 
     return jsonify({'status': 'success', 'message': 'OTP verified and user registered successfully.'}), 200

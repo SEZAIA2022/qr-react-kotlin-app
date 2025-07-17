@@ -159,7 +159,6 @@ function App() {
             element={
               <PrivateRoute>
                 <QrGenerator userEmail={userEmail} userRole={userRole} userApplication={userApplication} />
-                
               </PrivateRoute>
             }
           />

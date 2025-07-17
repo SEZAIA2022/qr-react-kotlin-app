@@ -8,29 +8,37 @@ const QuestionForm = () => {
   const [message, setMessage] = useState('');
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState('');
+  const [application, setApplication] = useState('');
 
-  // Charger les questions depuis l'API Flask
+  // Charger l'application depuis le localStorage
+  useEffect(() => {
+    const storedApplication = localStorage.getItem('userApplication');
+    if (storedApplication) setApplication(storedApplication);
+  }, []);
+  useEffect(() => {
+    if (application && application.trim() !== '') {
+      fetchQuestions();
+    }
+  }, [application]);
+
+  // Récupérer les questions
   const fetchQuestions = async () => {
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`);
-      console.log("Réponse API:", res.data);
-
-      // Sécurité : vérifier que la donnée est bien un tableau
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`, {params : {application}});
       if (Array.isArray(res.data)) {
         setQuestions(res.data);
-      } else if (res.data && Array.isArray(res.data.questions)) {
+      } else if (res.data?.questions && Array.isArray(res.data.questions)) {
         setQuestions(res.data.questions);
       } else {
-        console.error("Format de réponse inattendu:", res.data);
         setQuestions([]);
+        console.warn('Format de réponse inattendu :', res.data);
       }
-
       setSelected({});
       setEditId(null);
       setEditText('');
     } catch (error) {
-      console.error("Erreur fetchQuestions:", error);
-      setMessage('❌ Error loading questions.');
+      console.error('Erreur lors du chargement des questions :', error);
+      setMessage('❌ Erreur de chargement des questions.');
     }
   };
 
@@ -41,13 +49,18 @@ const QuestionForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!text.trim()) return;
+
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, { text });
-      setMessage('✅ Question successfully added!');
+      await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, {
+        text,
+        application,
+      });
+      setMessage('✅ Question ajoutée avec succès.');
       setText('');
       fetchQuestions();
     } catch (error) {
-      setMessage("❌ Error adding question.");
+      console.error('Erreur ajout question :', error);
+      setMessage('❌ Erreur lors de l’ajout de la question.');
     }
   };
 
@@ -64,7 +77,7 @@ const QuestionForm = () => {
       .map(([id]) => id);
 
     if (idsToDelete.length === 0) {
-      setMessage('Please select at least one question to delete.');
+      setMessage('Veuillez sélectionner au moins une question à supprimer.');
       return;
     }
 
@@ -74,20 +87,22 @@ const QuestionForm = () => {
           axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`)
         )
       );
-      setMessage(`✅ ${idsToDelete.length} question(s) successfully deleted.`);
+      setMessage(`✅ ${idsToDelete.length} question(s) supprimée(s).`);
       fetchQuestions();
     } catch (error) {
-      setMessage('❌ Error deleting questions.');
+      console.error('Erreur suppression multiple :', error);
+      setMessage('❌ Erreur lors de la suppression.');
     }
   };
 
   const deleteQuestion = async (id) => {
     try {
       await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
-      setMessage('✅ Question successfully deleted.');
+      setMessage('✅ Question supprimée.');
       fetchQuestions();
     } catch (error) {
-      setMessage('❌ Error deleting question.');
+      console.error('Erreur suppression :', error);
+      setMessage('❌ Erreur lors de la suppression.');
     }
   };
 
@@ -103,54 +118,53 @@ const QuestionForm = () => {
 
   const saveEdit = async () => {
     if (!editText.trim()) {
-      setMessage('Text cannot be empty.');
+      setMessage('Le texte ne peut pas être vide.');
       return;
     }
+
     try {
       await axios.put(`${process.env.REACT_APP_API_URL}/api/edit_question/${editId}`, {
         text: editText,
       });
-      setMessage('✅ Question successfully modified.');
+      setMessage('✅ Question modifiée.');
       setEditId(null);
       setEditText('');
       fetchQuestions();
     } catch (error) {
-      setMessage('❌ Error editing question.');
+      console.error('Erreur modification :', error);
+      setMessage('❌ Erreur lors de la modification.');
     }
   };
 
   return (
     <div style={containerStyle}>
-      <h2>Add a Question</h2>
+      <h2>Ajouter une question</h2>
       <form onSubmit={handleSubmit} style={formStyle}>
         <textarea
           rows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Write your question here"
+          placeholder="Écris ta question ici..."
           style={textareaStyle}
           required
         />
-        <button type="submit" style={buttonStyle}>
-          ADD
-        </button>
+        <button type="submit" style={buttonStyle}>Ajouter</button>
       </form>
 
-      <h2 style={{ marginTop: '40px' }}>Liste des Questions</h2>
+      <h2 style={{ marginTop: '40px' }}>Liste des questions</h2>
       {message && <p style={messageStyle}>{message}</p>}
 
       <button
         onClick={deleteSelected}
         style={{ ...buttonStyle, marginBottom: '15px', backgroundColor: '#dc3545' }}
       >
-        Delete selection
+        Supprimer la sélection
       </button>
 
       <ul style={listStyle}>
-        {Array.isArray(questions) && questions.map(({ id, text }) => (
+        {questions.map(({ id, text }) => (
           <li
             key={id}
-            className="question-item"
             style={listItemStyle}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f5ff'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -160,7 +174,7 @@ const QuestionForm = () => {
               checked={!!selected[id]}
               onChange={() => toggleSelect(id)}
               style={checkboxStyle}
-              aria-label={`Select question ${id}`}
+              aria-label={`Sélectionner la question ${id}`}
             />
 
             {editId === id ? (
@@ -180,9 +194,7 @@ const QuestionForm = () => {
                 <button onClick={() => startEditing(id, text)} style={iconButtonBase}>✏️</button>
                 <button
                   onClick={() => {
-                    if (window.confirm("Do you really want to delete this question ?")) {
-                      deleteQuestion(id);
-                    }
+                    if (window.confirm('Supprimer cette question ?')) deleteQuestion(id);
                   }}
                   style={iconButtonBase}
                 >
@@ -197,7 +209,7 @@ const QuestionForm = () => {
   );
 };
 
-// Styles
+// 🎨 Styles CSS-in-JS
 const containerStyle = {
   maxWidth: '600px',
   margin: '20px auto',
