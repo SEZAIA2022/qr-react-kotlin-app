@@ -851,30 +851,44 @@ def verify_delete_account():
 @bp.route('/add_qr', methods=['POST'])
 def add_qr():
     data = request.json
-    username = data.get('username')
-    location = data.get('location')
-    qr_code = data.get('qr_code')
 
-    if not username or not location or not qr_code:
+    username = data.get('username')
+    qr_code = data.get('qr_code')
+    country = data.get('country')
+    city = data.get('city')
+    zone = data.get('zone')
+    street = data.get('street')
+    exact_location = data.get('exact_location')
+    # Vérification des champs obligatoires
+    required_fields = [username, qr_code, country, city, zone, street, exact_location]
+    if not all(required_fields):
         return jsonify({'status': 'error', 'message': 'All fields are required'}), 400
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Vérifie si l'utilisateur existe
-        cursor.execute("SELECT 1 FROM users WHERE username = %s", (username,))
-        user_exists = cursor.fetchone()
-
-        if not user_exists:
-            return jsonify({'status': 'error', 'message': 'User does not exist.'}), 404
-
-        # Mise à jour du QR code
+        # Mise à jour du QR code avec toutes les infos de localisation
         cursor.execute("""
             UPDATE qr_codes
-            SET user = %s, locations = %s, is_active = TRUE
+            SET 
+                user = %s,
+                country = %s,
+                city = %s,
+                zone = %s,
+                street = %s,
+                exact_location = %s,
+                is_active = TRUE
             WHERE qr_code = %s
-        """, (username, location, qr_code))
+        """, (
+            username,
+            country,
+            city,
+            zone,
+            street,
+            exact_location,
+            qr_code
+        ))
 
         if cursor.rowcount == 0:
             return jsonify({'status': 'error', 'message': 'QR code not found.'}), 404
@@ -901,6 +915,7 @@ def exist_qr():
     username = data.get('username')
     role = data.get('role')
     qr_code = data.get('qr_code')
+    application = data.get('application_name')
 
     if not qr_code:
         return jsonify({'status': 'error', 'message': 'QR code is required.'}), 400
@@ -910,7 +925,7 @@ def exist_qr():
         cursor = conn.cursor()
 
         # Vérifier l'existence du QR code
-        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s", (qr_code,))
+        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s AND application = %s", (qr_code, application))
         qr_result = cursor.fetchone()
 
         if qr_result is None:
@@ -965,12 +980,15 @@ def exist_qr():
         return jsonify(response), 200
 
     except mysql.connector.Error as err:
+        print(str(err))
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
 
     finally:
-        if conn and conn.is_connected():
+        if cursor:
             cursor.close()
+        if conn and conn.is_connected():
             conn.close()
+
 
 
 
