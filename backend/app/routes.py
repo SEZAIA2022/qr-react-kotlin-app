@@ -356,12 +356,11 @@ def resend_otp():
 def send_ask_and_response():
     try:
         data = request.get_json()
-        print("Received data in combined endpoint:", data)
-
         username = data.get('username')
         date_str = data.get('date')  # ex: "Tuesday, 03 June 16:50"
         comment = data.get('comment')
         qr_code = data.get('qr_code')
+        application = data.get('application_name')
         responses = data.get('responses')  # liste de dicts: [{'question_id':1, 'response':'Yes'}, ...]
 
         # Vérifications basiques
@@ -387,8 +386,8 @@ def send_ask_and_response():
 
         # Insert ask_repair
         cursor.execute(
-            "INSERT INTO ask_repair (username, date, hour_slot, comment, qr_code) VALUES (%s, %s, %s, %s, %s)",
-            (username, date_only, time_only, comment, qr_code)
+            "INSERT INTO ask_repair (username, date, hour_slot, comment, qr_code, application) VALUES (%s, %s, %s, %s, %s, %s)",
+            (username, date_only, time_only, comment, qr_code, application)
         )
         ask_repair_id = cursor.lastrowid
         print(f"Inserted ask_repair with id: {ask_repair_id}")
@@ -402,8 +401,8 @@ def send_ask_and_response():
                 return jsonify({'status': 'error', 'message': 'Missing question_id or response in responses list'}), 400
 
             cursor.execute(
-                "INSERT INTO responses (question_id, response, username, qr_code, ask_repair_id) VALUES (%s, %s, %s, %s, %s)",
-                (question_id, response_text, username, qr_code, ask_repair_id)
+                "INSERT INTO responses (question_id, response, username, qr_code, ask_repair_id, application) VALUES (%s, %s, %s, %s, %s, %s)",
+                (question_id, response_text, username, qr_code, ask_repair_id, application)
             )
             print(f"Inserted response for question_id {question_id}")
 
@@ -468,13 +467,15 @@ def change_username():
     new_username = data.get('new_username')
     username = data.get('username')
     password = data.get('password')
+    application = data.get('application_name')
+
     if not username or not password or not new_username:
         return jsonify({'status': 'error', 'message': 'All champs requis'}), 400
     try:
         # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username=%s ", (username,))
+        cursor.execute("SELECT * FROM users WHERE username=%s and application = %s ", (username, application))
         user = cursor.fetchone()
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error:{str(err)}'}), 500
@@ -492,8 +493,11 @@ def change_username():
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE users SET username = %s WHERE username = %s
-            """, (new_username, username))
+                UPDATE users SET username = %s WHERE username = %s AND application = %s
+            """, (new_username, username, application))
+            cursor.execute("""
+                UPDATE registred_users SET username = %s WHERE username = %s AND application = %s
+            """, (new_username, username, application))
             conn.commit()
             return jsonify({'status': 'success', 'message': 'Username changed!'}), 200
         else:
@@ -505,7 +509,6 @@ def change_username():
 @bp.route('/change_email', methods=['POST'])
 def change_email():
     data = request.get_json()
-    print("Payload reçu:", data)  # Pour debug
 
     if not data:
         return jsonify({'status': 'error', 'message': 'No data received.'}), 400
@@ -513,7 +516,7 @@ def change_email():
     new_email = data.get('new_email')
     email = data.get('email')
     password = data.get('password')
-
+    application = data.get('application_name')
     if not email or not password or not new_email:
         return jsonify({'status': 'error', 'message': 'All fields are required.'}), 400
 
@@ -531,7 +534,7 @@ def change_email():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT password_hash FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT password_hash FROM users WHERE email = %s and application = %s ", (email,))
         user = cursor.fetchone()
         if not user:
             return jsonify({'status': 'error', 'message': 'User not found.'}), 404
@@ -572,6 +575,7 @@ def verify_change_email():
     data = request.get_json()
     otp = data.get('otp')
     email = data.get('email')
+    application = data.get('application_name')
     MAX_ATTEMPTS = 5
     conn = None
     cursor = None
@@ -603,7 +607,10 @@ def verify_change_email():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE users SET email = %s WHERE email = %s", (new_email, email))
+        cursor.execute("UPDATE users SET email = %s WHERE email = %s and application = %s ", (new_email, email, application))
+        cursor.execute("""
+                UPDATE registred_users SET username = %s WHERE username = %s AND application = %s
+            """, (new_email, email, application))
         conn.commit()
 
         del otp_storage[email]
@@ -629,13 +636,14 @@ def change_number():
     code = data.get('code')
     new_code = data.get('new_code')
     password = data.get('password')
+    application = data.get('application_name')
     if not phone or not password or not new_phone or not code or not new_code:
         return jsonify({'status': 'error', 'message': 'All champs requis'}), 400
     try:
         # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE phone_number=%s ", (format_number_simple(phone, code)))
+        cursor.execute("SELECT * FROM users WHERE phone_number=%s and application = %s ", (format_number_simple(phone, code)))
         user = cursor.fetchone()
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error:{str(err)}'}), 500
@@ -655,9 +663,9 @@ def change_number():
             cursor.execute("""
             UPDATE users 
             SET phone_number = %s
-            WHERE phone_number = %s ;
+            WHERE phone_number = %s and application = %s ;
 
-            """, (format_number_simple(new_phone, new_code), format_number_simple(phone, code)))
+            """, (format_number_simple(new_phone, new_code), format_number_simple(phone, code), application ))
             conn.commit()
             return jsonify({'status': 'success', 'message': 'number changed!'}), 200
         else:
@@ -678,6 +686,7 @@ def change_password():
     # Extraction des champs
     email = data.get('email')
     password = data.get('password')
+    application = data.get('application_name')
     new_password = data.get('new_password')
     confirm_new_password = data.get('confirm_new_password')
 
@@ -709,7 +718,7 @@ def change_password():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = %s OR username = %s ", (email,email))
+        cursor.execute("SELECT * FROM users WHERE (email = %s OR username = %s) AND application = %s ", (email, email, application))
         user = cursor.fetchone()
         if not user:
             return jsonify({'status': 'error', 'message': "Incorrect username or password."}), 404
@@ -747,7 +756,7 @@ def delete_account():
 
     email = data.get('email')
     password = data.get('password')
-
+    application = data.get('application_name')
     if not email or not password:
         return jsonify({'status': 'error', 'message': 'Email and password are required.'}), 400
 
@@ -759,7 +768,7 @@ def delete_account():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
+        cursor.execute("SELECT * FROM users WHERE email=%s AND application = %s ", (email, application))
         user = cursor.fetchone()
 
         if not user:
@@ -800,6 +809,7 @@ def verify_delete_account():
     data = request.get_json()
     otp = data.get('otp')
     email = data.get('email')
+    application = data.get('application_name')
 
     if not data or not otp or not email:
         return jsonify({'status': 'error', 'message': 'OTP and email are required.'}), 400
@@ -826,7 +836,7 @@ def verify_delete_account():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
+        cursor.execute("SELECT * FROM users WHERE email=%s AND application = %s ", (email, application))
         user = cursor.fetchone()
 
         if not user:
@@ -997,17 +1007,19 @@ from datetime import datetime
 @bp.route('/ask_repair', methods=['GET'])
 def ask_repair():
     username = request.args.get('username')
+    application = request.args.get('application') 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
         if username:
             cursor.execute(
-                "SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair WHERE username = %s",
-                (username,)
+                "SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair WHERE username = %s AND application = %s",
+                (username, application)
             )
         else:
-            cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair")
+            cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair WHERE application = %s",
+                           (application, ))
 
         asks = cursor.fetchall()
 
@@ -1481,10 +1493,7 @@ def get_questions():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        if application:
-            cursor.execute("SELECT id, text FROM questions WHERE application = %s", (application,))
-        else:
-            cursor.execute("SELECT id, text FROM questions")
+        cursor.execute("SELECT id, text FROM questions WHERE application = %s", (application,))
 
         questions = cursor.fetchall()
 
