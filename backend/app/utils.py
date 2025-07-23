@@ -7,6 +7,7 @@ import smtplib
 import re
 import phonenumbers
 from phonenumbers import  PhoneNumberFormat, region_code_for_country_code
+import requests
 from .database import get_db_connection
 
 # Stockage OTP temporaire
@@ -245,3 +246,22 @@ def validate_email_format(email: str) -> tuple[str, list]:
         errors.append({'field': 'email', 'message': 'Invalid email format.'})
 
     return email_clean, errors
+
+
+FCM_API_KEY = ''
+
+def send_fcm_notification(token, title, body):
+    url = "https://fcm.googleapis.com/fcm/send"
+    headers = {
+        'Authorization': f'key={FCM_API_KEY}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        "to": token,
+        "notification": {
+            "title": title,
+            "body": body
+        }
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    return response.json()

@@ -18,6 +18,7 @@ import HelpPage from './components/HelpPage';
 import Signup from './components/Signup';
 import Login from './components/Login';
 import VerifyOtp from './components/VerifyOtp';
+import UserRegister from './components/UserRegister';
 
 function AppWrapper() {
   return (
@@ -69,7 +70,7 @@ function App() {
       }
     };
 
-    const intervalId = setInterval(checkAuthExpiry, 60 * 60 * 1000); 
+    const intervalId = setInterval(checkAuthExpiry, 60 * 1000); // vérification toutes les 1 minute
     checkAuthExpiry();
     return () => clearInterval(intervalId);
   }, [navigate]);
@@ -80,7 +81,7 @@ function App() {
     setUserRole(role);
     setUserApplication(application);
 
-    const expiryTime = Date.now() + 60 * 1000; // 1 minute pour test
+    const expiryTime = Date.now() + 10 * 60 * 1000; // 10 minutes en ms
     localStorage.setItem('isAuthenticated', 'true');
     localStorage.setItem('userEmail', email);
     localStorage.setItem('userRole', role);
@@ -165,6 +166,8 @@ function App() {
           <Route path="/questions" element={<PrivateRoute><QuestionForm /></PrivateRoute>} />
           <Route path="/static_page" element={<PrivateRoute><StaticPage /></PrivateRoute>} />
           <Route path="/help_page" element={<PrivateRoute><HelpPage /></PrivateRoute>} />
+          <Route path="/user_register" element={<PrivateRoute><UserRegister /></PrivateRoute>} />
+
           <Route path="*" element={<Navigate to={isAuthenticated ? "/qr-generator" : "/login"} replace />} />
         </Routes>
       </main>
@@ -183,9 +186,11 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
           <span style={{ margin: '0 8px' }}>|</span>
           <CustomLink to="/questions" active={location.pathname === '/questions'}>Questions</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/static_page" active={location.pathname === '/static_page'}>Static Page</CustomLink>
+          <CustomLink to="/static_page" active={location.pathname === '/static_page'}>Static page</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
           <CustomLink to="/help_page" active={location.pathname === '/help_page'}>Help center</CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/user_register" active={location.pathname === '/user_register'}>Register user</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
           <button
             onClick={onLogout}

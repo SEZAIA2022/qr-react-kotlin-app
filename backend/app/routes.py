@@ -19,6 +19,7 @@ from .utils import (
     hash_password,
     is_email_taken,
     reset_auto_increment,
+    send_fcm_notification,
     send_otp_sms,
     validate_email_format,
     verify_password,
@@ -1182,11 +1183,12 @@ def cancel_appointment():
 
 @bp.route('/get_qrcodes', methods=['GET'])
 def get_qrcodes():
+    application = request.args.get('application')  # Récupère le paramètre ?application=..
     try:
         connection =get_db_connection()
         cursor = connection.cursor(dictionary=True)
 
-        cursor.execute("SELECT qr_code FROM qr_codes WHERE is_active = %s", (1,))
+        cursor.execute("SELECT qr_code FROM qr_codes WHERE is_active = %s AND application = %s", (1, application))
         results = cursor.fetchall()
 
 
@@ -1977,3 +1979,199 @@ def verify_otp():
     register_otp_storage.pop(email, None)
 
     return jsonify({'status': 'success', 'message': 'OTP verified and user registered successfully.'}), 200
+
+
+@bp.route('/register_user', methods=['POST'])
+def register_user():
+    data = request.get_json()
+
+    # Validation claire
+    missing_fields = [field for field in ['email', 'username', 'role', 'application'] if not data.get(field)]
+    if missing_fields:
+        return jsonify({
+            'success': False,
+            'message': f"The following field(s) are required: {', '.join(missing_fields)}"
+        }), 400
+
+    email = data.get('email')
+    username = data.get('username')
+    role = data.get('role')
+    application = data.get('application')
+
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        insert_query = """
+            INSERT INTO registred_users (email, username, role, application)
+            VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(insert_query, (email, username, role, application))
+        conn.commit()
+
+        return jsonify({'success': True, 'message': '✅ User registered successfully.'}), 201
+
+    except IntegrityError as e:
+        error_msg = str(e).lower()
+        if "duplicate" in error_msg or "1062" in error_msg:
+            if "email" in error_msg:
+                return jsonify({'success': False, 'message': '❌ Email is already in use.'}), 400
+            elif "username" in error_msg:
+                return jsonify({'success': False, 'message': '❌ Username is already in use.'}), 400
+            else:
+                return jsonify({'success': False, 'message': '❌ Email or username already used.'}), 400
+        return jsonify({'success': False, 'message': '❌ Database constraint error.'}), 400
+
+    except Exception as e:
+        # Log the real error for debugging
+        print("Unexpected error:", str(e))
+        return jsonify({'success': False, 'message': '❌ Internal server error. Please try again later.'}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+
+
+
+
+
+
+
+
+
+
+@bp.route('/save_token', methods=['POST'])
+def save_token():
+    data = request.json
+    user_id = data.get("user_id")
+    token = data.get("token")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO device_tokens (user_id, token) VALUES (%s, %s) ON DUPLICATE KEY UPDATE token=%s",
+                   (user_id, token, token))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "Token enregistré"}), 200
+
+
+@bp.route('/create_request', methods=['POST'])
+def create_request():
+    data = request.json
+    user_id = data['user_id']
+    equipment_id = data['equipment_id']
+    description = data['description']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO repair_requests (user_id, equipment_id, description) VALUES (%s, %s, %s)",
+                   (user_id, equipment_id, description))
+    conn.commit()
+
+    # Récupère les tokens des techniciens
+    cursor.execute("SELECT token FROM device_tokens JOIN users ON users.id = device_tokens.user_id WHERE users.role = 'admin'")
+    tokens = cursor.fetchall()
+    for (token,) in tokens:
+        send_fcm_notification(token, "Nouvelle demande de réparation", f"Équipement #{equipment_id} : {description}")
+
+    cursor.close()
+    conn.close()
+    return jsonify({"message": "Demande créée et notification envoyée"}), 200
+
+
+
+
+
+
+
+
+
+
+import firebase_admin
+from firebase_admin import messaging, credentials
+
+
+cred = credentials.Certificate('app/monprojetandroit.json')
+firebase_admin.initialize_app(cred)
+
+
+@bp.route('/register_token', methods=['POST'])
+def register_token():
+    data = request.get_json()
+    token = data.get('token')
+    role = data.get('role')
+    if not token or not role:
+        return jsonify({"error": "Token ou rôle manquant"}), 400
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Vérifie si le token existe déjà
+        cursor.execute("SELECT id FROM tokens WHERE token = %s", (token,))
+        result = cursor.fetchone()
+        if result:
+            # Mise à jour du rôle si différent
+            cursor.execute("UPDATE tokens SET role = %s WHERE token = %s", (role, token))
+        else:
+            # Insertion d'un nouveau token
+            cursor.execute("INSERT INTO tokens (token, role) VALUES (%s, %s)", (token, role))
+
+        conn.commit()
+        return jsonify({"message": f"Token {role} enregistré"}), 200
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+@bp.route('/notify_admin', methods=['POST'])
+def notify_admin():
+    data = request.get_json()
+    message_text = data.get('message', 'Nouvelle notification')
+    role = data.get('role')
+        
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT token FROM tokens WHERE role = %s", (role, ))
+    rows = cursor.fetchall()
+    admin_tokens = [row['token'] for row in rows]
+
+    if not admin_tokens :
+        return jsonify({"error": "Aucun token admin enregistré"}), 400
+    if role == 'user':
+        title = "Confirm"
+    else:
+        title = "Notification Admin"
+    # Crée un MulticastMessage avec la notification et la liste des tokens
+    multicast_message = messaging.MulticastMessage(
+        notification=messaging.Notification(
+            title=title,
+            body=message_text
+        ),
+        tokens=list(admin_tokens)
+    )
+
+    try:
+        # Envoie un seul MulticastMessage, pas une liste de messages
+        response = messaging.send_each_for_multicast(multicast_message)
+
+        return jsonify({
+            "success": True,
+            "success_count": response.success_count,
+            "failure_count": response.failure_count,
+            "responses": [r.__dict__ for r in response.responses],
+        }), 200
+
+    except Exception as e:
+        print("Erreur:", str(e))
+        return jsonify({"error": str(e)}), 500
