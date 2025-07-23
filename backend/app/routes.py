@@ -2014,7 +2014,7 @@ def register_user():
 
         return jsonify({'success': True, 'message': '✅ User registered successfully.'}), 201
 
-    except IntegrityError as e:
+    except IntegrityError as e: # type: ignore
         error_msg = str(e).lower()
         if "duplicate" in error_msg or "1062" in error_msg:
             if "email" in error_msg:
@@ -2035,16 +2035,6 @@ def register_user():
             cursor.close()
         if conn:
             conn.close()
-
-
-
-
-
-
-
-
-
-
 
 
 @bp.route('/save_token', methods=['POST'])
