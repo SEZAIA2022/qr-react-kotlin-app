@@ -2088,7 +2088,7 @@ import firebase_admin
 from firebase_admin import messaging, credentials
 
 
-cred = credentials.Certificate('app/monprojetandroit.json')
+cred = credentials.Certificate('monprojetandroidkey.json')
 firebase_admin.initialize_app(cred)
 
 
