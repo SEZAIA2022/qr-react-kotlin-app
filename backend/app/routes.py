@@ -8,8 +8,10 @@ import random
 import re
 from datetime import datetime, timedelta
 
+import firebase_admin
+from firebase_admin import messaging, credentials
+
 from flask import Blueprint, request, jsonify, current_app
-from twilio.rest import Client
 from .utils import (
     format_number_simple,
     generate_qr_code,
@@ -36,17 +38,19 @@ def login():
     data = request.get_json()
     if not data:
         return jsonify({'status': 'error', 'message': "No data received."}), 400
-    
+
     username = data.get('username')
     password = data.get('password')
     application = data.get('application_name')
+
     if not username or not password:
         return jsonify({'status': 'error', 'message': 'Username or email and password required.'}), 400
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE (username = %s OR email = %s) AND application = %s", (username, username, application))
+        cursor.execute("SELECT * FROM users WHERE (username = %s OR email = %s) AND application = %s",
+                       (username, username, application))
         users = cursor.fetchone()
     except Exception as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
@@ -66,11 +70,218 @@ def login():
             role = users[7]
             user = users[1]
             email = users[3]
-            return jsonify({'status': 'success', 'message': "Login successful!", 'role': role, 'user': user, 'email': email}), 200
+
+            # ✅ Met à jour is_logged à TRUE
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE users SET is_logged = TRUE 
+                    WHERE (username = %s OR email = %s) AND application = %s
+                """, (username, username, application))
+                conn.commit()
+            except Exception as err:
+                return jsonify({'status': 'error', 'message': f'Update error: {str(err)}'}), 500
+            finally:
+                if cursor: cursor.close()
+                if conn: conn.close()
+
+            return jsonify({
+                'status': 'success',
+                'message': "Login successful!",
+                'role': role,
+                'user': user,
+                'email': email
+            }), 200
         else:
             return jsonify({'status': 'error', 'message': "Incorrect username or password."}), 401
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Processing error: {str(e)}'}), 500
+
+
+
+@bp.route('/register_token', methods=['POST'])
+def register_token():
+    data = request.json
+    if not data:
+        return jsonify({"error": "Data is required"}), 400
+
+    username = data.get('username')
+    application = data.get('application_name')
+    token = data.get('token')
+
+    if not all([username, application, token]):
+        return jsonify({"error": "username, application_name and token are required"}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "UPDATE users SET token = %s WHERE username = %s AND application = %s",
+            (token, username, application)
+        )
+        conn.commit()
+        return jsonify({"message": "Token enregistré"}), 200
+
+    except Exception as e:
+        print(str(e))
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@bp.route('/logout', methods=['POST'])
+def logout():
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': "No data received."}), 400
+
+    username = data.get('username')
+    application = data.get('application_name')
+
+    if not username or not application:
+        return jsonify({'status': 'error', 'message': 'Username and application name are required.'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE users SET is_logged = FALSE
+            WHERE (username = %s OR email = %s) AND application = %s
+        """, (username, username, application))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({'status': 'error', 'message': "User not found."}), 404
+
+        return jsonify({'status': 'success', 'message': "Logout successful."}), 200
+    except Exception as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+
+
+cred = credentials.Certificate('monprojetandroidkey.json')
+firebase_admin.initialize_app(cred)
+
+
+@bp.route('/notify_admin', methods=['POST'])
+def notify_admin():
+    data = request.get_json()
+    data = request.get_json()
+    print("Incoming JSON:", data)  # Add this line for debugging
+
+    if not data:
+        return jsonify({"error": "Missing JSON data"}), 400
+
+    message_text = data.get('message', 'New notification')
+    role = data.get('role')
+    email = data.get('email')
+    application = data.get('application_name')
+
+    if not all([role, email, application]):
+        return jsonify({"error": "'role', 'email', and 'application_name' fields are required"}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Select tokens for users who match the role, email, application and are logged in
+        cursor.execute(
+            "SELECT token FROM users WHERE role = %s AND is_logged = TRUE AND application = %s AND email = %s",
+            (role, application, email)
+        )
+        rows = cursor.fetchall()
+        admin_tokens = [row['token'] for row in rows]
+
+        if not admin_tokens:
+            return jsonify({"error": "No admin tokens registered"}), 400
+
+        # Choose title based on role
+        title = "Confirm" if role == 'user' else "Admin Notification"
+
+    except Exception as e:
+        print("Error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+    # Crée un MulticastMessage avec la notification et la liste des tokens
+    multicast_message = messaging.MulticastMessage(
+        notification=messaging.Notification(
+            title=title,
+            body=message_text
+        ),
+        tokens=list(admin_tokens)
+    )
+
+    try:
+        # Envoie un seul MulticastMessage, pas une liste de messages
+        response = messaging.send_each_for_multicast(multicast_message)
+
+        return jsonify({
+            "success": True,
+            "success_count": response.success_count,
+            "failure_count": response.failure_count,
+            "responses": [r.__dict__ for r in response.responses],
+        }), 200
+
+    except Exception as e:
+        print("Erreur:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+
+
+
+
+
+@bp.route('/is_logged', methods=['GET'])
+def get_is_logged():
+    username = request.args.get('username')
+    application = request.args.get('application_name')
+
+    if not username or not application:
+        return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT is_logged FROM users WHERE (username = %s OR email = %s) AND application = %s",
+            (username, username, application)
+        )
+        result = cursor.fetchone()
+    except Exception as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+    if result is None:
+        return jsonify({'status': 'error', 'message': 'User not found'}), 404
+
+    is_logged = bool(result[0])
+    return jsonify({'status': 'success', 'is_logged': is_logged}), 200
+
 
 @bp.route('/register', methods=['POST'])
 def register():
@@ -2037,129 +2248,89 @@ def register_user():
             conn.close()
 
 
-@bp.route('/save_token', methods=['POST'])
-def save_token():
-    data = request.json
-    user_id = data.get("user_id")
-    token = data.get("token")
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO device_tokens (user_id, token) VALUES (%s, %s) ON DUPLICATE KEY UPDATE token=%s",
-                   (user_id, token, token))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    return jsonify({"message": "Token enregistré"}), 200
 
 
-@bp.route('/create_request', methods=['POST'])
-def create_request():
-    data = request.json
-    user_id = data['user_id']
-    equipment_id = data['equipment_id']
-    description = data['description']
+# @bp.route('/register_token', methods=['POST'])
+# def register_token():
+#     data = request.get_json()
+#     token = data.get('token')
+#     role = data.get('role')
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO repair_requests (user_id, equipment_id, description) VALUES (%s, %s, %s)",
-                   (user_id, equipment_id, description))
-    conn.commit()
+#     if not token or not role:
+#         return jsonify({"error": "Token ou rôle manquant"}), 400
 
-    # Récupère les tokens des techniciens
-    cursor.execute("SELECT token FROM device_tokens JOIN users ON users.id = device_tokens.user_id WHERE users.role = 'admin'")
-    tokens = cursor.fetchall()
-    for (token,) in tokens:
-        send_fcm_notification(token, "Nouvelle demande de réparation", f"Équipement #{equipment_id} : {description}")
+#     if role not in ('admin', 'user'):
+#         return jsonify({"error": "Rôle invalide"}), 400
 
-    cursor.close()
-    conn.close()
-    return jsonify({"message": "Demande créée et notification envoyée"}), 200
+#     try:
+#         conn = get_db_connection()
+#         cursor = conn.cursor()
+#         # Vérifie si le token existe déjà
+#         cursor.execute("SELECT id FROM tokens WHERE token = %s", (token,))
+#         result = cursor.fetchone()
+
+#         if result:
+#             # Mise à jour du rôle si différent
+#             cursor.execute("UPDATE tokens SET role = %s WHERE token = %s", (role, token))
+#         else:
+#             # Insertion d'un nouveau token
+#             cursor.execute("INSERT INTO tokens (token, role) VALUES (%s, %s)", (token, role))
+
+#         conn.commit()
+
+#         return jsonify({"message": f"Token {role} enregistré"}), 200
+
+#     except Exception as e:
+#         conn.rollback()
+#         return jsonify({"error": str(e)}), 500
 
 
 
 
 
 
+# cred = credentials.Certificate('monprojetandroidkey.json')
+# firebase_admin.initialize_app(cred)
 
 
-import firebase_admin
-from firebase_admin import messaging, credentials
-
-
-cred = credentials.Certificate('monprojetandroidkey.json')
-firebase_admin.initialize_app(cred)
-
-
-@bp.route('/register_token', methods=['POST'])
-def register_token():
-    data = request.get_json()
-    token = data.get('token')
-    role = data.get('role')
-    if not token or not role:
-        return jsonify({"error": "Token ou rôle manquant"}), 400
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        # Vérifie si le token existe déjà
-        cursor.execute("SELECT id FROM tokens WHERE token = %s", (token,))
-        result = cursor.fetchone()
-        if result:
-            # Mise à jour du rôle si différent
-            cursor.execute("UPDATE tokens SET role = %s WHERE token = %s", (role, token))
-        else:
-            # Insertion d'un nouveau token
-            cursor.execute("INSERT INTO tokens (token, role) VALUES (%s, %s)", (token, role))
-
-        conn.commit()
-        return jsonify({"message": f"Token {role} enregistré"}), 200
-
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-@bp.route('/notify_admin', methods=['POST'])
-def notify_admin():
-    data = request.get_json()
-    message_text = data.get('message', 'Nouvelle notification')
-    role = data.get('role')
+# @bp.route('/notify_admin', methods=['POST'])
+# def notify_admin():
+#     data = request.get_json()
+#     message_text = data.get('message', 'Nouvelle notification')
+#     role = data.get('role')
         
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT token FROM tokens WHERE role = %s", (role, ))
-    rows = cursor.fetchall()
-    admin_tokens = [row['token'] for row in rows]
+#     conn = get_db_connection()
+#     cursor = conn.cursor(dictionary=True)
+#     cursor.execute("SELECT token FROM tokens WHERE role = %s", (role, ))
+#     rows = cursor.fetchall()
+#     admin_tokens = [row['token'] for row in rows]
 
-    if not admin_tokens :
-        return jsonify({"error": "Aucun token admin enregistré"}), 400
-    if role == 'user':
-        title = "Confirm"
-    else:
-        title = "Notification Admin"
-    # Crée un MulticastMessage avec la notification et la liste des tokens
-    multicast_message = messaging.MulticastMessage(
-        notification=messaging.Notification(
-            title=title,
-            body=message_text
-        ),
-        tokens=list(admin_tokens)
-    )
+#     if not admin_tokens :
+#         return jsonify({"error": "Aucun token admin enregistré"}), 400
+#     if role == 'user':
+#         title = "Confirm"
+#     else:
+#         title = "Notification Admin"
+#     # Crée un MulticastMessage avec la notification et la liste des tokens
+#     multicast_message = messaging.MulticastMessage(
+#         notification=messaging.Notification(
+#             title=title,
+#             body=message_text
+#         ),
+#         tokens=list(admin_tokens)
+#     )
 
-    try:
-        # Envoie un seul MulticastMessage, pas une liste de messages
-        response = messaging.send_each_for_multicast(multicast_message)
+#     try:
+#         # Envoie un seul MulticastMessage, pas une liste de messages
+#         response = messaging.send_each_for_multicast(multicast_message)
 
-        return jsonify({
-            "success": True,
-            "success_count": response.success_count,
-            "failure_count": response.failure_count,
-            "responses": [r.__dict__ for r in response.responses],
-        }), 200
+#         return jsonify({
+#             "success": True,
+#             "success_count": response.success_count,
+#             "failure_count": response.failure_count,
+#             "responses": [r.__dict__ for r in response.responses],
+#         }), 200
 
-    except Exception as e:
-        print("Erreur:", str(e))
-        return jsonify({"error": str(e)}), 500
+#     except Exception as e:
+#         print("Erreur:", str(e))
+#         return jsonify({"error": str(e)}), 500
