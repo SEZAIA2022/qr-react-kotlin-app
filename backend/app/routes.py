@@ -250,20 +250,21 @@ def notify_admin():
 @bp.route('/get_nearest_admin_email', methods=['POST'])
 def get_nearest_admin_email():
     data = request.get_json()
-    print(data)
     email = data.get('email')
     application = data.get('application_name')
+    date = data.get('date')          # format "YYYY-MM-DD"
+    hour_slot = data.get('hour_slot') # format "HH:mm"
 
-    if not email or not application:
-        return jsonify({'status': 'error', 'message': 'email et application sont requis.'}), 400
+    if not (email and application and date and hour_slot):
+        return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
 
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)  # important : dict cursor
 
         # Étape 1 : récupérer les infos du user
         cursor.execute("""
-            SELECT address, city, code_postal
+            SELECT city
             FROM users
             WHERE email = %s AND application = %s AND role = 'user'
         """, (email, application))
@@ -272,48 +273,48 @@ def get_nearest_admin_email():
         if not user_info:
             return jsonify({'status': 'error', 'message': 'Utilisateur non trouvé ou rôle invalide.'}), 404
 
-        address, city, code_postal = user_info
+        city = user_info['city']
 
         # Étape 2 : chercher admin avec adresse exacte
         cursor.execute("""
-            SELECT email
+            SELECT username, email
             FROM users
-            WHERE role = 'admin' AND address = %s AND city = %s AND code_postal = %s AND application = %s
-            LIMIT 1
-        """, (address, city, code_postal, application))
-        technician = cursor.fetchone()
+            WHERE role = 'admin' AND city = %s AND application = %s
+        """, (city, application))
+        technicians = cursor.fetchall()
 
-        # Sinon chercher dans la même ville
-        if not technician:
-            cursor.execute("""
-                SELECT email
-                FROM users
-                WHERE role = 'admin' AND city = %s AND application = %s
-                LIMIT 1
-            """, (city, application))
-            technician = cursor.fetchone()
+        if not technicians:
+            return jsonify({'status': 'error', 'message': 'No technicians found'}), 404
 
-        # Sinon chercher dans le même code postal
-        if not technician:
-            cursor.execute("""
-                SELECT email
-                FROM users
-                WHERE role = 'admin' AND code_postal = %s AND application = %s
-                LIMIT 1
-            """, (code_postal, application))
-            technician = cursor.fetchone()
+        # Trouver les techniciens déjà pris à cette date et créneau
+        cursor.execute("""
+            SELECT user_tech FROM ask_repair
+            WHERE date = %s AND hour_slot = %s AND application = %s AND status = 'processing'
+        """, (date, hour_slot, application))
+        taken_techs = set(row['user_tech'] for row in cursor.fetchall())
 
-        if technician:
-            return jsonify({'status': 'success', 'email': technician[0]}), 200
+        # Trouver un technicien libre (premier non pris)
+        free_tech = None
+        for tech in technicians:
+            if tech['username'] not in taken_techs:
+                free_tech = tech
+                break
+
+        if free_tech:
+            return jsonify({'status': 'success', 'email': free_tech['email']})
         else:
-            return jsonify({'status': 'error', 'message': 'Aucun technicien trouvé à proximité.'}), 404
+            return jsonify({'status': 'error', 'message': 'No available technicians at this slot'}), 409
+
 
     except Exception as e:
+        print(f"Error in /get_nearest_admin_email: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 
@@ -647,9 +648,10 @@ def send_ask_and_response():
         qr_code = data.get('qr_code')
         application = data.get('application_name')
         responses = data.get('responses')  # liste de dicts: [{'question_id':1, 'response':'Yes'}, ...]
-
+        technician_email = data.get('technician_email')
+        print (data)
         # Vérifications basiques
-        if not all([username, date_str, comment, qr_code, responses]):
+        if not all([username, date_str, comment, qr_code, responses, technician_email]):
             return jsonify({'status': 'error', 'message': 'Missing data'}), 400
 
         # Parse date
@@ -668,11 +670,13 @@ def send_ask_and_response():
         conn = get_db_connection()
         reset_auto_increment(conn, "ask_repair")
         cursor = conn.cursor()
-
+        cursor.execute("SELECT username FROM users WHERE email = %s AND application = %s",(technician_email, application))
+        users_tech = cursor.fetchone()
+        user_tech = users_tech[0]
         # Insert ask_repair
         cursor.execute(
-            "INSERT INTO ask_repair (username, date, hour_slot, comment, qr_code, application) VALUES (%s, %s, %s, %s, %s, %s)",
-            (username, date_only, time_only, comment, qr_code, application)
+            "INSERT INTO ask_repair (username, date, hour_slot, comment, qr_code, user_tech, application) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (username, date_only, time_only, comment, qr_code, user_tech, application)
         )
         ask_repair_id = cursor.lastrowid
         print(f"Inserted ask_repair with id: {ask_repair_id}")
@@ -1370,32 +1374,58 @@ def send_email():
 
 @bp.route('/taken_slots', methods=['GET'])  # Tu fais un GET maintenant
 def get_taken_slots():
+    user = request.args.get('user')
+    application = request.args.get('application')
+    if not user or not application:
+        return jsonify({'status': 'error', 'message': 'User and application parameters are required'}), 400
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        cursor.execute("SELECT city FROM users WHERE username = %s and application = %s", (user, application))
+        result = cursor.fetchone()
+        if not result:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+        city = result[0]
+        cursor.execute("""
+            SELECT COUNT(*) FROM users
+            WHERE role = 'admin'
+            AND city = %s
+            AND application = %s
+        """, (city, application))
+        total_techs = cursor.fetchone()[0]
 
         cursor.execute("""
-            SELECT date, hour_slot FROM ask_repair 
-            WHERE status IN ('processing', 'repaired')
-        """)
+            SELECT date, hour_slot, COUNT(*) AS taken_count
+            FROM ask_repair ar
+            JOIN users u ON ar.user_tech = u.username
+            WHERE u.role = 'admin'
+            AND u.city = %s
+            AND ar.application = %s
+            AND ar.status IN ('processing', 'repaired')
+            GROUP BY date, hour_slot
+        """, (city, application))
 
         rows = cursor.fetchall()
         taken_slots = {}
-
-        for date, hour in rows:
+        for date, hour, count in rows:
             date_str = date.strftime("%Y-%m-%d")
             
-            # Conversion timedelta (heure) vers HH:MM
+            # Convertir timedelta en HH:mm
             total_seconds = hour.total_seconds()
             hours = int(total_seconds // 3600)
             minutes = int((total_seconds % 3600) // 60)
             hour_str = f"{hours:02}:{minutes:02}"
 
-            if date_str not in taken_slots:
-                taken_slots[date_str] = []
-            taken_slots[date_str].append(hour_str)
+            taken_slots.setdefault(date_str, {})[hour_str] = count
 
-        return jsonify({'status': 'success', 'taken_slots': taken_slots}), 200
+
+
+        return jsonify({
+            'status': 'success',
+            'total_techs': total_techs,
+            'taken_slots': taken_slots
+        }), 200
+
 
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
