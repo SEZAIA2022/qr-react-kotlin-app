@@ -247,40 +247,113 @@ def notify_admin():
 
 
 
+@bp.route('/get_nearest_admin_email', methods=['POST'])
+def get_nearest_admin_email():
+    data = request.get_json()
+    print(data)
+    email = data.get('email')
+    application = data.get('application_name')
 
-
-
-
-
-
-
-@bp.route('/is_logged', methods=['GET'])
-def get_is_logged():
-    username = request.args.get('username')
-    application = request.args.get('application_name')
-
-    if not username or not application:
-        return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
+    if not email or not application:
+        return jsonify({'status': 'error', 'message': 'email et application sont requis.'}), 400
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT is_logged FROM users WHERE (username = %s OR email = %s) AND application = %s",
-            (username, username, application)
-        )
-        result = cursor.fetchone()
-    except Exception as err:
-        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+
+        # Étape 1 : récupérer les infos du user
+        cursor.execute("""
+            SELECT address, city, code_postal
+            FROM users
+            WHERE email = %s AND application = %s AND role = 'user'
+        """, (email, application))
+        user_info = cursor.fetchone()
+
+        if not user_info:
+            return jsonify({'status': 'error', 'message': 'Utilisateur non trouvé ou rôle invalide.'}), 404
+
+        address, city, code_postal = user_info
+
+        # Étape 2 : chercher admin avec adresse exacte
+        cursor.execute("""
+            SELECT email
+            FROM users
+            WHERE role = 'admin' AND address = %s AND city = %s AND code_postal = %s AND application = %s
+            LIMIT 1
+        """, (address, city, code_postal, application))
+        technician = cursor.fetchone()
+
+        # Sinon chercher dans la même ville
+        if not technician:
+            cursor.execute("""
+                SELECT email
+                FROM users
+                WHERE role = 'admin' AND city = %s AND application = %s
+                LIMIT 1
+            """, (city, application))
+            technician = cursor.fetchone()
+
+        # Sinon chercher dans le même code postal
+        if not technician:
+            cursor.execute("""
+                SELECT email
+                FROM users
+                WHERE role = 'admin' AND code_postal = %s AND application = %s
+                LIMIT 1
+            """, (code_postal, application))
+            technician = cursor.fetchone()
+
+        if technician:
+            return jsonify({'status': 'success', 'email': technician[0]}), 200
+        else:
+            return jsonify({'status': 'error', 'message': 'Aucun technicien trouvé à proximité.'}), 404
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
 
-    if result is None:
-        return jsonify({'status': 'error', 'message': 'User not found'}), 404
 
-    is_logged = bool(result[0])
-    return jsonify({'status': 'success', 'is_logged': is_logged}), 200
+
+
+
+
+
+
+
+
+
+
+
+
+# @bp.route('/is_logged', methods=['GET'])
+# def get_is_logged():
+#     username = request.args.get('username')
+#     application = request.args.get('application_name')
+
+#     if not username or not application:
+#         return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
+
+#     try:
+#         conn = get_db_connection()
+#         cursor = conn.cursor()
+#         cursor.execute(
+#             "SELECT is_logged FROM users WHERE (username = %s OR email = %s) AND application = %s",
+#             (username, username, application)
+#         )
+#         result = cursor.fetchone()
+#     except Exception as err:
+#         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+#     finally:
+#         if cursor: cursor.close()
+#         if conn: conn.close()
+
+#     if result is None:
+#         return jsonify({'status': 'error', 'message': 'User not found'}), 404
+
+#     is_logged = bool(result[0])
+#     return jsonify({'status': 'success', 'is_logged': is_logged}), 200
 
 
 @bp.route('/register', methods=['POST'])
