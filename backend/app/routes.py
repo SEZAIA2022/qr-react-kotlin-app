@@ -1224,7 +1224,7 @@ def exist_qr():
         cursor = conn.cursor()
 
         # Vérifier l'existence du QR code
-        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s AND application = %s", (qr_code, application))
+        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s AND application = %s ", (qr_code, application))
         qr_result = cursor.fetchone()
 
         if qr_result is None:
@@ -1255,8 +1255,8 @@ def exist_qr():
 
         # Vérifier s’il y a une réparation en cours
         cursor.execute(
-            "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s",
-            (qr_code, "Processing")
+            "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s AND user_tech = %s",
+            (qr_code, "Processing", username)
         )
         repair_status = cursor.fetchone()
 
@@ -1303,11 +1303,11 @@ def ask_repair():
 
         if username:
             cursor.execute(
-                "SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair WHERE username = %s AND application = %s",
+                "SELECT id, username, date, comment, qr_code, hour_slot, status, user_tech FROM ask_repair WHERE username = %s AND application = %s",
                 (username, application)
             )
         else:
-            cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status FROM ask_repair WHERE application = %s",
+            cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status, user_tech FROM ask_repair WHERE application = %s",
                            (application, ))
 
         asks = cursor.fetchall()
@@ -1322,7 +1322,8 @@ def ask_repair():
                 f"{row[5].seconds // 3600:02}:{(row[5].seconds % 3600) // 60:02}:{row[5].seconds % 60:02}"
                 if row[5] else None
             ),
-            'status': row[6]
+            'status': row[6],
+            'user_tech': row[7]
         } for row in asks]
 
         return jsonify(asks_list), 200
@@ -1647,36 +1648,61 @@ def add_description():
 def get_repair_by_qrcode_full():
     try:
         qr_code = request.args.get('qr_code')
-        if not qr_code:
-            return jsonify({'status': 'error', 'message': "Le paramètre 'qr_code' est requis."}), 400
+        user_tech = request.args.get('user_tech')
+
+        if not qr_code or not user_tech:
+            return jsonify({'status': 'error', 'message': "All data is required."}), 400
 
         connection = get_db_connection()
-        cursor = connection.cursor()
+        cursor = connection.cursor(dictionary=True)
 
-        query = "SELECT * FROM ask_repair WHERE qr_code = %s"
-        cursor.execute(query, (qr_code,))
+        # Récupérer toutes les réparations "repaired" ou "processing" du technicien
+        query = """
+            SELECT *
+            FROM ask_repair
+            WHERE qr_code = %s AND (
+                status = 'repaired'
+                OR (status = 'processing' AND user_tech = %s)
+            )
+        """
+        cursor.execute(query, (qr_code, user_tech))
         results = cursor.fetchall()
 
         if not results:
             return jsonify({'status': 'error', 'message': "Aucune donnée trouvée pour ce QR code."}), 404
 
-        # Pour chaque ligne, reconstruire un dict en formatant la date comme dans ton exemple
         formatted_results = []
         for row in results:
-            # Exemple : adapter les noms de colonnes selon ta table
+            username = row.get('username')
+            application = row.get('application')  # Assure-toi que ce champ est dans la table `ask_repair`
+
+            # Récupérer l'adresse de l'utilisateur à partir de la table users
+            cursor.execute("""
+                SELECT address, city
+                FROM users
+                WHERE username = %s AND application = %s
+            """, (username, application))
+            user_data = cursor.fetchone()
+            full_address = None
+            if user_data:
+                address_part = user_data.get('address') or ''
+                city_part = user_data.get('city') or ''
+                full_address = f"{address_part}, {city_part}".strip(', ')
+
             formatted_row = {
-                'id': row[0],
-                'username': row[1],
-                'date': row[2].strftime("%A, %d %b %Y") if row[2] else None,
-                'comment': row[3],
-                'qr_code': row[4],
+                'id': row.get('id'),
+                'username': username,
+                'date': row.get('date').strftime("%A, %d %b %Y") if row.get('date') else None,
+                'comment': row.get('comment'),
+                'qr_code': row.get('qr_code'),
                 'hour_slot': (
-                    f"{row[5].seconds // 3600:02}:{(row[5].seconds % 3600) // 60:02}:{row[5].seconds % 60:02}"
-                    if row[5] else None
+                    f"{row['hour_slot'].seconds // 3600:02}:{(row['hour_slot'].seconds % 3600) // 60:02}:{row['hour_slot'].seconds % 60:02}"
+                    if row.get('hour_slot') else None
                 ),
-                'status': row[6],
-                'description_problem': row[7]
-                # ajoute d'autres champs si nécessaire
+                'status': row.get('status'),
+                'description_problem': row.get('description_problem'),
+                'user_tech': row.get('user_tech'),
+                'address': full_address
             }
             formatted_results.append(formatted_row)
 
@@ -1690,6 +1716,8 @@ def get_repair_by_qrcode_full():
             cursor.close()
         if 'connection' in locals() and connection.is_connected():
             connection.close()
+
+
 
 @bp.route('/format_phone', methods=['POST'])
 def format_phone():
