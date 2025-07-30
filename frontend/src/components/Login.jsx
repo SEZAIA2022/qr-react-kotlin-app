@@ -46,7 +46,8 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
         // Passer à App.js
         setIsAuthenticated(true, email, role, application);
         setMessage('');
-        navigate('/qr-generator');
+        
+
       } else {
         setMessage('Incorrect email or password.');
       }

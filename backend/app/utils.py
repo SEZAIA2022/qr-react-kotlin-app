@@ -175,15 +175,21 @@ def get_user_by_contact(data, application):
 
 
 
-def generate_qr_code(output_folder):
+def generate_qr_code(output_folder, application, index):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    code = str(uuid.uuid4())  # UUID unique
+    code = str(uuid.uuid4())  # Unique code stored in DB
+    filename = f"{application}{index}.png"  # File name: application1.png, application2.png, etc.
+    path = os.path.join(output_folder, filename)
+
     img = qrcode.make(code)
-    path = os.path.join(output_folder, f"{code}.png")
     img.save(path)
+
     return code, path
+
+
+
 
 def reset_auto_increment(conn, table_name: str):
     cursor = conn.cursor()

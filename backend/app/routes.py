@@ -1757,37 +1757,45 @@ def generate_qr():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Récupérer l'ID maximum existant
+    # Get current max ID to avoid conflicts
     cursor.execute("SELECT MAX(id) FROM qr_codes")
     max_id_result = cursor.fetchone()
-    current_id = max_id_result[0] or 0  # Si aucun ID encore présent, on commence à 0
+    current_id = max_id_result[0] or 0
+
+    # Get number of existing QR codes for this application
+    cursor.execute("SELECT COUNT(*) FROM qr_codes WHERE application = %s", (application,))
+    existing_count = cursor.fetchone()[0]
 
     output_folder = os.path.join(current_app.root_path, "static", "qr")
     generated = 0
 
     while generated < count:
-        code, path = generate_qr_code(output_folder)
+        index = existing_count + generated + 1
+        code, path = generate_qr_code(output_folder, application, index)
 
         try:
-            current_id += 1  # Incrémente l'ID localement
+            current_id += 1
 
             cursor.execute("""
-                INSERT INTO qr_codes (id, qr_code, is_active, application)
-                VALUES (%s, %s, %s, %s)
-            """, (current_id, code, 0, application))
+                INSERT INTO qr_codes (id, qr_code, is_active, application, image_path)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                current_id, code, 0, application,
+                f"/static/qr/{application}{index}.png"
+            ))
 
             conn.commit()
 
             qr_list.append({
                 "id": current_id,
                 "code": code,
-                "image_path": f"/static/qr/{os.path.basename(path)}"
+                "image_path": f"/static/qr/{application}{index}.png"
             })
             generated += 1
 
         except mysql.connector.IntegrityError as e:
-            if e.errno == 1062:  # Code déjà existant
-                current_id -= 1  # Annuler l'incrémentation
+            if e.errno == 1062:
+                current_id -= 1
                 continue
             else:
                 cursor.close()
@@ -1798,6 +1806,8 @@ def generate_qr():
     conn.close()
 
     return jsonify(qr_list), 201
+
+
 
 
 @bp.route("/questions", methods=["POST"])
@@ -2528,6 +2538,39 @@ def register_user():
             conn.close()
 
 
+@bp.route('/qr_history', methods=['GET'])
+def qr_history():
+    application = request.args.get('application')
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT qr_code, is_active, image_path
+            FROM qr_codes
+            WHERE application = %s
+            ORDER BY id ASC
+        """, (application,))
+
+        results = cursor.fetchall()
+
+        qr_list = [
+            {
+                "code": row["qr_code"],
+                "status": "active" if row["is_active"] == 1 else "inactive",
+                "image_path": row.get("image_path", "")
+            }
+            for row in results
+        ]
+        return jsonify({"status": "success", "data": qr_list}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
 
 
 # @bp.route('/register_token', methods=['POST'])

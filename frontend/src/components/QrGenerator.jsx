@@ -9,6 +9,10 @@ const QrGenerator = ({ userEmail }) => {
   const [role, setRole] = useState("");
   const [application, setApplication] = useState("");
 
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   useEffect(() => {
     const storedRole = localStorage.getItem('userRole') || '';
     const storedApp = localStorage.getItem('userApplication') || '';
@@ -26,25 +30,63 @@ const QrGenerator = ({ userEmail }) => {
     setErrorMsg("");
     setLoading(true);
     setResults([]);
-
     try {
-      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, { count: numCount, application: application });
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, {
+        count: numCount,
+        application: application
+      });
       setResults(res.data);
+      setShowHistory(false);
     } catch (error) {
-      console.error("Error generating QR codes :", error);
+      console.error("Error generating QR codes:", error);
       setErrorMsg("Error generating QR codes. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchHistory = async () => {
+    setErrorMsg("");
+    setLoadingHistory(true);
+    try {
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/qr_history`, {
+        params: { application }
+      });
+      setHistory(res.data.data || []);
+      setShowHistory(true);
+      setResults([]);
+    } catch (error) {
+      console.error("Error fetching QR code history:", error);
+      setErrorMsg("Error fetching QR code history. Please try again.");
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const printQRCode = (qr) => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head><title>Print QR Code</title></head>
+        <body style="text-align:center; font-family: Arial;">
+          <h2>QR Code: ${qr.image_path.split('/').pop()}</h2>
+          <img src="${process.env.REACT_APP_API_URL}${qr.image_path}" alt="QR code" width="300" height="300" />
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
+
   return (
     <div style={containerStyle}>
-      <h2 style={{ marginBottom: '20px' }}>QR Code generator</h2>
+      <h2 style={{ marginBottom: '20px' }}>QR Code Generator</h2>
 
       {userEmail && (
         <p style={{ fontWeight: '600', marginBottom: '10px' }}>
-          Connecté en tant que : <strong>{userEmail}</strong>
+          Logged in as: <strong>{userEmail}</strong>
         </p>
       )}
 
@@ -54,58 +96,116 @@ const QrGenerator = ({ userEmail }) => {
         </p>
       )}
 
-      <div style={inputContainerStyle}>
-        <input
-          type="number"
-          min="1"
-          value={count}
-          onChange={e => setCount(e.target.value)}
-          style={inputStyle}
-          aria-label="Nombre de QR codes à générer"
-        />
+      <div style={{ marginBottom: '20px' }}>
         <button
-          onClick={generateQR}
-          disabled={loading}
-          style={buttonStyle}
-          aria-busy={loading}
+          onClick={() => setShowHistory(false)}
+          style={{ ...buttonStyle, marginRight: '10px', backgroundColor: showHistory ? '#6c757d' : '#007bff' }}
         >
-          {loading ? "Generating..." : "Generate"}
+          Generate QR Codes
+        </button>
+        <button
+          onClick={fetchHistory}
+          style={{ ...buttonStyle, backgroundColor: showHistory ? '#007bff' : '#6c757d' }}
+          disabled={loadingHistory}
+        >
+          {loadingHistory ? "Loading..." : "View History"}
         </button>
       </div>
 
-      {errorMsg && <p style={errorStyle}>{errorMsg}</p>}
+      {!showHistory && (
+        <>
+          <div style={inputContainerStyle}>
+            <input
+              type="number"
+              min="1"
+              value={count}
+              onChange={e => setCount(e.target.value)}
+              style={inputStyle}
+              aria-label="Number of QR codes to generate"
+            />
+            <button
+              onClick={generateQR}
+              disabled={loading}
+              style={buttonStyle}
+              aria-busy={loading}
+            >
+              {loading ? "Generating..." : "Generate"}
+            </button>
+          </div>
 
-      {loading && <p style={loadingStyle}>Generation in progress… ⏳</p>}
+          {errorMsg && <p style={errorStyle}>{errorMsg}</p>}
+          {loading && <p style={loadingStyle}>Generation in progress… ⏳</p>}
 
-      {results.length > 0 && (
-        <div style={resultsContainerStyle}>
-          {results.map(qr => (
-            <div key={qr.code} style={qrItemStyle}>
-              <p style={{ fontWeight: '600', marginBottom: '8px' }}>{qr.code}</p>
-              <img
-                src={`${process.env.REACT_APP_API_URL}${qr.image_path}`}
-                alt={`QR code pour ${qr.code}`}
-                width="150"
-                height="150"
-                style={qrImageStyle}
-                onLoad={e => e.currentTarget.classList.add('loaded')}
-              />
-              <button
-                style={downloadBtnStyle}
-                onClick={() => {
-                  const link = document.createElement('a');
-                  link.href = `${process.env.REACT_APP_API_URL}${qr.image_path}`;
-                  link.download = `${qr.code}.png`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }}
-              >
-                Download
-              </button>
+          {results.length > 0 && (
+            <div style={resultsContainerStyle}>
+              {results.map(qr => (
+                <div key={qr.code} style={qrItemStyle}>
+                  <p style={{ fontWeight: '600', marginBottom: '8px' }}>
+                    {qr.image_path.split('/').pop()}
+                  </p>
+
+                  <img
+                    src={`${process.env.REACT_APP_API_URL}${qr.image_path}`}
+                    alt={`QR code for ${qr.code}`}
+                    width="150"
+                    height="150"
+                    style={qrImageStyle}
+                    onLoad={e => e.currentTarget.classList.add('loaded')}
+                  />
+                  <button
+                    style={downloadBtnStyle}
+                    onClick={() => {
+                      const link = document.createElement('a');
+                      link.href = `${process.env.REACT_APP_API_URL}${qr.image_path}`;
+                      link.download = `${qr.code}.png`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                  >
+                    Download
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
+      )}
+
+      {showHistory && (
+        <>
+          {errorMsg && <p style={errorStyle}>{errorMsg}</p>}
+          {loadingHistory && <p style={loadingStyle}>Loading history… ⏳</p>}
+
+          {history.length === 0 && !loadingHistory && <p>No QR codes in history.</p>}
+
+          <div style={resultsContainerStyle}>
+            {history.map(qr => (
+              <div key={qr.code} style={qrItemStyle}>
+                <p style={{ fontWeight: '600', marginBottom: '8px' }}>
+                    {qr.image_path.split('/').pop()} — <span style={{ color: qr.status === 'active' ? 'green' : 'red' }}>
+                    {qr.status}
+                  </span>
+                </p>
+
+                <img
+                  src={`${process.env.REACT_APP_API_URL}${qr.image_path}`}
+                  alt={`QR code for ${qr.code}`}
+                  width="150"
+                  height="150"
+                  style={qrImageStyle}
+                  onLoad={e => e.currentTarget.classList.add('loaded')}
+                />
+                <button
+                  style={downloadBtnStyle}
+                  onClick={() => printQRCode(qr)}
+                >
+                  Print
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <style>{`
@@ -121,8 +221,9 @@ const QrGenerator = ({ userEmail }) => {
   );
 };
 
+// Styles
 const containerStyle = {
-  maxWidth: '600px',
+  maxWidth: '650px',
   margin: '30px auto 40px',
   padding: '20px',
   backgroundColor: '#f9faff',

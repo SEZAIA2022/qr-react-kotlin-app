@@ -21,6 +21,7 @@ import VerifyOtp from './components/VerifyOtp';
 import UserRegister from './components/UserRegister';
 import ForgetPassword from './components/ForgetPassword';
 import CreateNewPassword from './components/CreateNewPassword';
+import AdminDashboard from './components/AdminDashboard';
 import './style.css';
 
 function AppWrapper() {
@@ -73,11 +74,14 @@ function App() {
       }
     };
 
+
     const intervalId = setInterval(checkAuthExpiry, 60 * 1000); // vérification toutes les 1 minute
     checkAuthExpiry();
     return () => clearInterval(intervalId);
   }, [navigate]);
 
+
+  
   const handleLogin = (email, role, application) => {
     setIsAuthenticated(true);
     setUserEmail(email);
@@ -154,7 +158,16 @@ function App() {
             }
           />
 
-
+          <Route
+            path="/admin-dashboard"
+            element={
+              isAuthenticated && userRole.toLowerCase() === 'admin' ? (
+                <AdminDashboard userEmail={userEmail} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
           <Route path="/forgot-password" element={<ForgetPassword setOtpEmail={setOtpEmail}/>} />
           <Route path="/create-new-password" element={<CreateNewPassword setOtpEmail={setOtpEmail}/>} />
           <Route
