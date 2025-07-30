@@ -8,7 +8,7 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState('');
-  const navigate = useNavigate();
+
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

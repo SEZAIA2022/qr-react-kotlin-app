@@ -55,11 +55,15 @@ function App() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const publicPaths = ['/login', '/signup', '/verify-otp'];
-    if (isAuthenticated && publicPaths.includes(location.pathname)) {
+  if (isAuthenticated && ['/login', '/signup', '/verify-otp'].includes(location.pathname)) {
+    if (userRole?.toLowerCase() === 'admin') {
+      navigate('/admin-dashboard', { replace: true });
+    } else {
       navigate('/qr-generator', { replace: true });
     }
-  }, [isAuthenticated, location.pathname, navigate]);
+  }
+}, [isAuthenticated, userRole, location.pathname, navigate]);
+
 
   useEffect(() => {
     const checkAuthExpiry = () => {
@@ -73,12 +77,21 @@ function App() {
         navigate('/login', { replace: true });
       }
     };
-
-
     const intervalId = setInterval(checkAuthExpiry, 60 * 1000); // vérification toutes les 1 minute
     checkAuthExpiry();
     return () => clearInterval(intervalId);
   }, [navigate]);
+
+  useEffect(() => {
+  if (isAuthenticated && ['/login', '/signup', '/verify-otp'].includes(location.pathname)) {
+    if (userRole?.toLowerCase() === 'admin') {
+      navigate('/admin-dashboard', { replace: true });
+    } else {
+      navigate('/qr-generator', { replace: true });
+    }
+  }
+}, [isAuthenticated, userRole, location.pathname, navigate]);
+
 
 
   
@@ -108,6 +121,8 @@ function App() {
   const PrivateRoute = ({ children }) => {
     return isAuthenticated ? children : <Navigate to="/login" replace />;
   };
+  const authReady = !isAuthenticated || (userEmail && userRole && userApplication);
+  if (!authReady) return null; // ou un loader/spinner
 
   return (
     <>
@@ -161,13 +176,14 @@ function App() {
           <Route
             path="/admin-dashboard"
             element={
-              isAuthenticated && userRole.toLowerCase() === 'admin' ? (
+              isAuthenticated && userRole?.toLowerCase() === 'admin' ? (
                 <AdminDashboard userEmail={userEmail} />
               ) : (
                 <Navigate to="/login" replace />
               )
             }
           />
+
           <Route path="/forgot-password" element={<ForgetPassword setOtpEmail={setOtpEmail}/>} />
           <Route path="/create-new-password" element={<CreateNewPassword setOtpEmail={setOtpEmail}/>} />
           <Route
@@ -192,10 +208,29 @@ function App() {
 
 const NavBar = ({ isAuthenticated, onLogout }) => {
   const location = useLocation();
+  const isAdminDashboard = location.pathname === '/admin-dashboard';
+
 
   return (
-    <nav style={navStyle}>
-      {isAuthenticated ? (
+  <nav style={navStyle}>
+    {isAuthenticated ? (
+      isAdminDashboard ? (
+        // Cas admin dashboard ➜ seulement logout
+        <button
+          onClick={onLogout}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#dc3545',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontSize: '16px',
+          }}
+        >
+          Logout
+        </button>
+      ) : (
+        // Cas normal ➜ tous les liens
         <>
           <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>QR generator</CustomLink>
           <span style={{ margin: '0 8px' }}>|</span>
@@ -222,15 +257,17 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
             Logout
           </button>
         </>
-      ) : (
-        <>
-          <CustomLink to="/login" active={location.pathname === '/login'}>Login</CustomLink>
-          <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/signup" active={location.pathname === '/signup'}>Sign Up</CustomLink>
-        </>
-      )}
-    </nav>
-  );
+      )
+    ) : (
+      <>
+        <CustomLink to="/login" active={location.pathname === '/login'}>Login</CustomLink>
+        <span style={{ margin: '0 8px' }}>|</span>
+        <CustomLink to="/signup" active={location.pathname === '/signup'}>Sign Up</CustomLink>
+      </>
+    )}
+  </nav>
+);
+
 };
 
 const CustomLink = ({ to, active, children }) => {
