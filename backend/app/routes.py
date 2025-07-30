@@ -2218,8 +2218,9 @@ def signup():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM users_web WHERE email = %s", (email,))
-        if cursor.fetchone():
+        cursor.execute("SELECT is_activated FROM users_web WHERE email = %s", (email,))
+        users = cursor.fetchone()
+        if users and users[0] == True:
             return jsonify({'status': 'error', 'message': "Username or email already exists."}), 400
 
         role = "user"
@@ -2305,9 +2306,9 @@ def verify_otp():
 
         # Insérer l'utilisateur
         cursor.execute("""
-            INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
-        """, (new_id, email, password_hash, city, country, application, role))
+            INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at, is_activated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+        """, (new_id, email, password_hash, city, country, application, role, True))
 
         # ✅ Insérer aussi dans static_pages
         cursor.execute("""
@@ -2384,9 +2385,9 @@ def forgot_password_web():
     cursor = conn.cursor()
 
     insert_query = """
-        select email from users_web WHERE email = %s
+        select email from users_web WHERE email = %s AND  is_activated = %s
     """
-    cursor.execute(insert_query, (email,))
+    cursor.execute(insert_query, (email, True))
     user = cursor.fetchone()
     conn.commit()
     if not user:
@@ -2470,8 +2471,8 @@ def change_password_web_forget():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE users_web SET password_hash = %s WHERE email = %s
-        """, (hashed_password, email))
+            UPDATE users_web SET password_hash = %s WHERE email = %s AND is_activated = %s
+        """, (hashed_password, email, True))
         conn.commit()
         return jsonify({'message': 'Password updated successfully!'}), 200
     except Exception as e:
@@ -2571,6 +2572,80 @@ def qr_history():
         if conn.is_connected():
             cursor.close()
             conn.close()
+
+@bp.route('/get_all_user_web', methods=['GET'])
+def get_all_users():
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        query = """
+        SELECT u.*, 
+               IFNULL(q.qrcode_count, 0) AS qrcode_count
+        FROM users_web u
+        LEFT JOIN (
+            SELECT application, COUNT(*) AS qrcode_count
+            FROM qr_codes
+            WHERE is_active = 1
+            GROUP BY application
+        ) q ON u.application = q.application
+        WHERE u.role = 'user'
+        """
+
+        cursor.execute(query)
+        users = cursor.fetchall()
+
+        return jsonify({'status': 'success', 'users': users}), 200
+
+    except Exception as e:
+        print(str(e))
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+
+@bp.route('/user_register_web', methods=['POST'])
+def user_register_web():
+    data = request.json
+    email = data.get('email')
+    application = data.get('application')
+    role = data.get('role')
+
+    if not email or not role or not application:
+        return jsonify({'status': 'error', 'message': 'Missing required fields.'}), 400
+
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
+
+        # Get max id from users_web table
+        cursor.execute("SELECT MAX(id) FROM users_web")
+        max_id = cursor.fetchone()[0]
+        if max_id is None:
+            max_id = 0
+        new_id = max_id + 1
+
+        query = """
+            INSERT INTO users_web (id, email, application, role, is_activated)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor.execute(query, (new_id, email, application, role, False))
+        connection.commit()
+
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 'error', 'message': 'Database error.'}), 500
+
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+    return jsonify({'status': 'success'}), 201
+
 
 
 # @bp.route('/register_token', methods=['POST'])

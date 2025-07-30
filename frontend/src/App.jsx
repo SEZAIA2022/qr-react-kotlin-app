@@ -22,6 +22,7 @@ import UserRegister from './components/UserRegister';
 import ForgetPassword from './components/ForgetPassword';
 import CreateNewPassword from './components/CreateNewPassword';
 import AdminDashboard from './components/AdminDashboard';
+import UserRegisterWeb from './components/UserRegisterWeb';
 import './style.css';
 
 function AppWrapper() {
@@ -198,6 +199,14 @@ function App() {
           <Route path="/static_page" element={<PrivateRoute><StaticPage /></PrivateRoute>} />
           <Route path="/help_page" element={<PrivateRoute><HelpPage /></PrivateRoute>} />
           <Route path="/user_register" element={<PrivateRoute><UserRegister /></PrivateRoute>} />
+          <Route
+            path="/user_register_web"
+            element={
+              <PrivateRoute>
+                <UserRegisterWeb />
+              </PrivateRoute>
+            }
+          />
 
           <Route path="*" element={<Navigate to={isAuthenticated ? "/qr-generator" : "/login"} replace />} />
         </Routes>
@@ -208,67 +217,103 @@ function App() {
 
 const NavBar = ({ isAuthenticated, onLogout }) => {
   const location = useLocation();
-  const isAdminDashboard = location.pathname === '/admin-dashboard';
-
+  // Définir une variable qui regroupe les 2 routes où on veut la navbar admin
+  const isAdminSection = ['/admin-dashboard', '/user_register_web'].includes(location.pathname);
 
   return (
-  <nav style={navStyle}>
-    {isAuthenticated ? (
-      isAdminDashboard ? (
-        // Cas admin dashboard ➜ seulement logout
-        <button
-          onClick={onLogout}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#dc3545',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            fontSize: '16px',
-          }}
-        >
-          Logout
-        </button>
-      ) : (
-        // Cas normal ➜ tous les liens
-        <>
-          <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>QR generator</CustomLink>
-          <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/questions" active={location.pathname === '/questions'}>Questions</CustomLink>
-          <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/static_page" active={location.pathname === '/static_page'}>Static page</CustomLink>
-          <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/help_page" active={location.pathname === '/help_page'}>Help center</CustomLink>
-          <span style={{ margin: '0 8px' }}>|</span>
-          <CustomLink to="/user_register" active={location.pathname === '/user_register'}>Register user</CustomLink>
-          <span style={{ margin: '0 8px' }}>|</span>
-          <button
-            onClick={onLogout}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#dc3545',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '16px',
-              marginLeft: '10px',
-            }}
-          >
-            Logout
-          </button>
-        </>
-      )
-    ) : (
-      <>
-        <CustomLink to="/login" active={location.pathname === '/login'}>Login</CustomLink>
-        <span style={{ margin: '0 8px' }}>|</span>
-        <CustomLink to="/signup" active={location.pathname === '/signup'}>Sign Up</CustomLink>
-      </>
-    )}
-  </nav>
-);
+    <nav style={navStyle}>
+      {isAuthenticated ? (
+        isAdminSection ? (
+          // Navbar admin commune pour admin-dashboard ET user_register_web
+          <>
+            <CustomLink to="/admin-dashboard" active={location.pathname === '/admin-dashboard'}>
+              Admin Dashboard
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink
+              to="/user_register_web"
+              active={location.pathname === '/user_register_web'}
+              style={{
+                marginRight: '10px',
+                fontWeight: 'bold',
+                fontSize: '16px',
+                color: '#007bff',
+                textDecoration:
+                  location.pathname === '/user_register_web' ? 'underline' : 'none',
+              }}
+            >
+              Register user
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
 
+            <button
+              onClick={onLogout}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#dc3545',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '16px',
+              }}
+            >
+              Logout
+            </button>
+          </>
+        ) : (
+          // Navbar utilisateur normal
+          <>
+            <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>
+              QR generator
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink to="/questions" active={location.pathname === '/questions'}>
+              Questions
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
+              Static page
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink to="/help_page" active={location.pathname === '/help_page'}>
+              Help center
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink to="/user_register" active={location.pathname === '/user_register'}>
+              Register user
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <button
+              onClick={onLogout}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#dc3545',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '16px',
+                marginLeft: '10px',
+              }}
+            >
+              Logout
+            </button>
+          </>
+        )
+      ) : (
+        <>
+          <CustomLink to="/login" active={location.pathname === '/login'}>
+            Login
+          </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/signup" active={location.pathname === '/signup'}>
+            Sign Up
+          </CustomLink>
+        </>
+      )}
+    </nav>
+  );
 };
+
 
 const CustomLink = ({ to, active, children }) => {
   const baseStyle = {

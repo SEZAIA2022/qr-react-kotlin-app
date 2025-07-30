@@ -84,18 +84,6 @@ const QrGenerator = ({ userEmail }) => {
     <div style={containerStyle}>
       <h2 style={{ marginBottom: '20px' }}>QR Code Generator</h2>
 
-      {userEmail && (
-        <p style={{ fontWeight: '600', marginBottom: '10px' }}>
-          Logged in as: <strong>{userEmail}</strong>
-        </p>
-      )}
-
-      {(role || application) && (
-        <p style={{ marginBottom: '20px', fontWeight: '500', color: '#555' }}>
-          Role: <strong>{role || 'N/A'}</strong> — Application: <strong>{application || 'N/A'}</strong>
-        </p>
-      )}
-
       <div style={{ marginBottom: '20px' }}>
         <button
           onClick={() => setShowHistory(false)}

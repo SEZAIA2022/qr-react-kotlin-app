@@ -1,63 +1,65 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 
-const UserRegister = () => {
-  const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [role, setRole] = useState('');
-  const [application, setApplication] = useState('');
-  const [loading, setLoading] = useState(false);
+const UserRegisterWeb = () => {
+  const [formData, setFormData] = useState({
+    email: '',
+    application: '',
+    city: '',
+    country: '',
+    role: 'user',
+  });
+
   const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
   const [isError, setIsError] = useState(false);
 
-  const roles = ['admin', 'user'];
+  const handleChange = e => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
 
-  useEffect(() => {
-    const storedApp = localStorage.getItem('userApplication') || '';
-    setApplication(storedApp);
-  }, []);
+  const handleSubmit = async e => {
+    e.preventDefault();
 
-  const handleSubmit = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!email || !username || !role || !application) {
+    if (!formData.email || !formData.application || !formData.role) {
       setIsError(true);
-      setMessage('All fields are required.');
+      setMessage('Please fill in all required fields.');
       return;
     }
 
-    if (!emailRegex.test(email)) {
-      setIsError(true);
-      setMessage('Please enter a valid email address.');
-      return;
-    }
+    const dataToSend = {
+      email: formData.email,
+      application: formData.application,
+      role: formData.role,
+    };
 
-    setIsError(false);
-    setMessage('');
     setLoading(true);
+    setMessage('');
 
     try {
-      const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/register_user`, {
-        email,
-        username,
-        role,
-        application,
-      });
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/api/user_register_web`,
+        dataToSend
+      );
 
-      if (response.data.success) {
+      if (response.data.status === 'success') {
         setIsError(false);
-        setMessage(response.data.message || 'User registered successfully.');
-        setEmail('');
-        setUsername('');
-        setRole('');
+        setMessage('User registered successfully!');
+        setFormData({
+          email: '',
+          application: '',
+          city: '',
+          country: '',
+          role: 'user',
+        });
       } else {
         setIsError(true);
-        setMessage(response.data.message || 'Registration error.');
+        setMessage(response.data.message || 'Registration failed.');
       }
     } catch (error) {
-      console.error('Registration error:', error);
       setIsError(true);
-      setMessage('Registration failed. Please try again.');
+      setMessage('Server or network error.');
     } finally {
       setLoading(false);
     }
@@ -65,50 +67,44 @@ const UserRegister = () => {
 
   return (
     <div style={containerStyle}>
-      <h2 style={{ marginBottom: '20px' }}>Add a user</h2>
+      <h2 style={{ marginBottom: '20px' }}>Add New User</h2>
 
-      <form
-        style={formStyle}
-        onSubmit={e => {
-          e.preventDefault();
-          if (!loading) handleSubmit();
-        }}
-        noValidate
-      >
+      <form onSubmit={handleSubmit} style={formStyle} noValidate>
         <input
           type="email"
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
+          name="email"
+          placeholder="Email *"
+          value={formData.email}
+          onChange={handleChange}
           style={inputStyle}
           required
-          autoComplete="email"
         />
 
         <input
           type="text"
-          placeholder="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
+          name="application"
+          placeholder="Application *"
+          value={formData.application}
+          onChange={handleChange}
           style={inputStyle}
           required
-          autoComplete="username"
         />
 
         <fieldset style={fieldsetStyle}>
           <legend style={legendStyle}>Select a role:</legend>
           <div style={radioGroupStyle}>
-            {roles.map(r => (
-              <label key={r} style={radioLabelStyle}>
+            {['user', 'admin'].map(role => (
+              <label key={role} style={radioLabelStyle}>
                 <input
                   type="radio"
                   name="role"
-                  value={r}
-                  checked={role === r}
-                  onChange={e => setRole(e.target.value)}
-                  required
+                  value={role}
+                  checked={formData.role === role}
+                  onChange={handleChange}
                 />
-                <span style={{ marginLeft: '6px', textTransform: 'capitalize' }}>{r}</span>
+                <span style={{ marginLeft: '6px', textTransform: 'capitalize' }}>
+                  {role}
+                </span>
               </label>
             ))}
           </div>
@@ -120,9 +116,7 @@ const UserRegister = () => {
       </form>
 
       {message && (
-        <p style={isError ? errorStyle : successStyle} role="alert" aria-live="polite">
-          {message}
-        </p>
+        <p style={isError ? errorStyle : successStyle}>{message}</p>
       )}
     </div>
   );
@@ -209,4 +203,4 @@ const successStyle = {
   marginTop: '15px',
 };
 
-export default UserRegister;
+export default UserRegisterWeb;
