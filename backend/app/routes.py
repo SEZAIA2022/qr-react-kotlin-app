@@ -509,8 +509,7 @@ def forgot_password():
     application = data.get("application_name")
     if not contact:
         return jsonify({'status': 'error', 'message': "Email or phone is required."}), 400
-    if not application:
-        return jsonify({'status': 'error', 'message': "Application name is required."}), 400
+
 
     user = get_user_by_contact(contact, application)
     if not user:
@@ -2321,6 +2320,156 @@ def verify_otp():
     register_otp_storage.pop(email, None)
 
     return jsonify({'status': 'success', 'message': 'OTP verified and user registered successfully.'}), 200
+
+
+@bp.route('/resend_otp_web', methods=['POST'])
+def resend_otp_web():
+    data = request.get_json()
+    email = data.get('email')
+    previous_page = data.get('previous_page')
+
+    if not email:
+        return jsonify({'status': 'error', 'message': "Email is required."}), 400
+
+    new_otp = str(random.randint(1000, 9999))
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+
+    if previous_page == "signup":
+        record = register_otp_storage.get(email)
+        if not record:
+            return jsonify({'status': 'error', 'message': "User not found in registration storage."}), 404
+        record['otp'] = new_otp
+        record['expires_at'] = expires_at
+        record['attempts'] = 0
+        print(f"[DEBUG] OTP updated in register_otp_storage for {email}: {register_otp_storage[email]}")
+    else:
+        old_record = otp_storage.get(email, {})
+        otp_storage[email] = {
+            'otp': new_otp,
+            'expires_at': expires_at,
+            'attempts': 0,
+            'new_email': old_record.get('new_email')
+        }
+        print(f"[DEBUG] OTP updated in otp_storage for {email}: {otp_storage[email]}")
+
+    try:
+        send_otp_email(email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
+        print(f"[INFO] New OTP sent to {email}: {new_otp}")
+        return jsonify({'status': 'success', 'message': "New OTP sent to your email."}), 200
+    except Exception as e:
+        print("Error sending OTP:", str(e))
+        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
+
+
+@bp.route('/forgot_password_web', methods=['POST'])
+def forgot_password_web():
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': "No data received."}), 400
+
+    email = data.get('email')  
+    if not email:
+        return jsonify({'status': 'error', 'message': "Email is required."}), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    insert_query = """
+        select email from users_web WHERE email = %s
+    """
+    cursor.execute(insert_query, (email,))
+    user = cursor.fetchone()
+    conn.commit()
+    if not user:
+        return jsonify({'status': 'error', 'message': "User not found."}), 404
+
+    otp = str(random.randint(1000, 9999))
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+
+    # Stocker OTP avec la clé correspondant au contact utilisé (email ou téléphone)
+    otp_storage[email] = {'otp': otp, 'expires_at': expires_at, 'attempts': 0, 'email' : email}
+
+    try:
+        send_otp_email(
+            email,
+            otp,
+            current_app.config['EMAIL_SENDER'],
+            current_app.config['EMAIL_PASSWORD']
+        )
+        message = "OTP sent to your email."
+       
+        return jsonify({'status': 'success', 'message': message})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
+
+
+
+
+
+@bp.route('/verify_forget_web', methods=['POST'])
+def verify_forget_web():
+    data = request.get_json()
+    otp = data.get('otp')
+    email = data.get('email')
+    if not otp or not email:
+        return jsonify({'status': 'error', 'message': "Please enter the complete code"}), 400
+
+    record = otp_storage.get(email)
+    if not record:
+        return jsonify({'status': 'error', 'message': "No OTP found for this user."}), 404
+
+    # Limite des tentatives fixée à 5 par exemple
+    MAX_ATTEMPTS = 5
+    if record['attempts'] >= MAX_ATTEMPTS:
+        del otp_storage[email]  # suppression pour bloquer définitivement ou temporairement
+        return jsonify({'status': 'error', 'message': 'Too many attempts. OTP blocked.'}), 429
+
+    if datetime.utcnow() > record['expires_at']:
+        del otp_storage[email]
+        return jsonify({'status': 'error', 'message': "OTP expired."}), 400
+
+    if record['otp'] != otp:
+        record['attempts'] += 1  # <-- Incrémenter ici
+        return jsonify({'status': 'error', 'message': "Incorrect OTP."}), 400
+
+
+    del otp_storage[email]
+    return jsonify({'status': 'success', 'message': "User successfully verified."}), 200
+
+
+@bp.route('/change_password_web_forget', methods=['POST'])
+def change_password_web_forget():
+    data = request.json
+    email = data.get('email')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+
+    if not email or not new_password or not confirm_password:
+        return jsonify({'status': 'error', 'message': 'All fields are required.'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'status': 'error', 'message': 'Passwords do not match.'}), 400
+    
+    if not is_valid_password(new_password):
+        return jsonify({
+            'status': 'error', 'message': 'Password must be at least 8 characters, include an uppercase letter, a number, and a special character.'
+        }), 400
+
+    hashed_password = hash_password(new_password)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE users_web SET password_hash = %s WHERE email = %s
+        """, (hashed_password, email))
+        conn.commit()
+        return jsonify({'message': 'Password updated successfully!'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @bp.route('/register_user', methods=['POST'])

@@ -19,6 +19,9 @@ import Signup from './components/Signup';
 import Login from './components/Login';
 import VerifyOtp from './components/VerifyOtp';
 import UserRegister from './components/UserRegister';
+import ForgetPassword from './components/ForgetPassword';
+import CreateNewPassword from './components/CreateNewPassword';
+import './style.css';
 
 function AppWrapper() {
   return (
@@ -144,17 +147,16 @@ function App() {
           <Route
             path="/verify-otp"
             element={
-              otpEmail ? (
-                <VerifyOtp
-                  email={otpEmail}
-                  setOtpEmail={setOtpEmail}
-                  onVerified={() => setOtpEmail(null)}
-                />
-              ) : (
-                <Navigate to="/signup" replace />
-              )
+              <VerifyOtp
+                email={otpEmail}
+                setOtpEmail={setOtpEmail}
+              />
             }
           />
+
+
+          <Route path="/forgot-password" element={<ForgetPassword setOtpEmail={setOtpEmail}/>} />
+          <Route path="/create-new-password" element={<CreateNewPassword setOtpEmail={setOtpEmail}/>} />
           <Route
             path="/qr-generator"
             element={

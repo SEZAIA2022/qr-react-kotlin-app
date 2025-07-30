@@ -87,6 +87,10 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
         <button type="submit" style={buttonStyle}>Login</button>
       </form>
       <p>
+        <Link to="/forgot-password" style={{ fontSize: '14px' }}>Forgot password?</Link>
+      </p>
+
+      <p>
         Don't have an account? <Link to="/signup">Sign up</Link>
       </p>
     </div>

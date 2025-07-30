@@ -14,6 +14,7 @@ const Signup = ({ setOtpEmail }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,15 +24,25 @@ const Signup = ({ setOtpEmail }) => {
     setMessage('');
     setFieldErrors({});
 
+    // Vérification des champs vides
     if (!email || !city || !country || !application || !password || !confirmPassword) {
       setMessage('All fields are required.');
       return;
     }
 
+    // Vérification format email
     if (!emailRegex.test(email)) {
       setMessage('Please enter a valid email address.');
       return;
     }
+
+    // Vérification correspondance mot de passe
+    if (password !== confirmPassword) {
+      setFieldErrors({ confirm_password: 'Passwords do not match.' });
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/signup`, {
@@ -40,12 +51,14 @@ const Signup = ({ setOtpEmail }) => {
         country,
         application,
         password,
-        confirm_password: confirmPassword,  // ✅ Envoi du champ attendu
+        confirm_password: confirmPassword,
       });
 
       if (res.data.message === 'OTP sent to your email.') {
         setOtpEmail(email);
-        navigate('/verify-otp');
+        sessionStorage.setItem('otpEmail', email);
+        sessionStorage.setItem('previousPage', 'signup');
+        navigate('/verify-otp', { state: { previousPage: 'signup', email }, replace: true });
       } else {
         setMessage('Unexpected response from server.');
       }
@@ -53,7 +66,6 @@ const Signup = ({ setOtpEmail }) => {
       if (err.response) {
         const { status, data } = err.response;
         if (status === 400 && data.errors) {
-          // ✅ Affiche les erreurs par champ
           const errors = {};
           data.errors.forEach(err => {
             errors[err.field] = err.message;
@@ -65,6 +77,8 @@ const Signup = ({ setOtpEmail }) => {
       } else {
         setMessage('Network error. Please try again later.');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -79,13 +93,16 @@ const Signup = ({ setOtpEmail }) => {
       <h2>Create Account</h2>
       {message && <p style={messageStyle}>{message}</p>}
 
-      <form onSubmit={handleSubmit} style={formStyle}>
+      <form onSubmit={handleSubmit} style={formStyle} noValidate>
         <input
-          type="text"
+          type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           style={inputStyle}
+          aria-invalid={!!fieldErrors.email}
+          aria-describedby="email-error"
+          required
         />
         {renderFieldError('email')}
 
@@ -95,6 +112,9 @@ const Signup = ({ setOtpEmail }) => {
           value={city}
           onChange={(e) => setCity(e.target.value)}
           style={inputStyle}
+          aria-invalid={!!fieldErrors.city}
+          aria-describedby="city-error"
+          required
         />
         {renderFieldError('city')}
 
@@ -104,6 +124,9 @@ const Signup = ({ setOtpEmail }) => {
           value={country}
           onChange={(e) => setCountry(e.target.value)}
           style={inputStyle}
+          aria-invalid={!!fieldErrors.country}
+          aria-describedby="country-error"
+          required
         />
         {renderFieldError('country')}
 
@@ -113,6 +136,9 @@ const Signup = ({ setOtpEmail }) => {
           value={application}
           onChange={(e) => setApplication(e.target.value)}
           style={inputStyle}
+          aria-invalid={!!fieldErrors.application}
+          aria-describedby="application-error"
+          required
         />
         {renderFieldError('application')}
 
@@ -123,6 +149,9 @@ const Signup = ({ setOtpEmail }) => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={{ ...inputStyle, paddingRight: '40px' }}
+            aria-invalid={!!fieldErrors.password}
+            aria-describedby="password-error"
+            required
           />
           <button
             type="button"
@@ -142,6 +171,9 @@ const Signup = ({ setOtpEmail }) => {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             style={{ ...inputStyle, paddingRight: '40px' }}
+            aria-invalid={!!fieldErrors.confirm_password}
+            aria-describedby="confirm-password-error"
+            required
           />
           <button
             type="button"
@@ -154,7 +186,9 @@ const Signup = ({ setOtpEmail }) => {
         </div>
         {renderFieldError('confirm_password')}
 
-        <button type="submit" style={buttonStyle}>Sign Up</button>
+        <button type="submit" style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }} disabled={loading}>
+          {loading ? 'Signing up...' : 'Sign Up'}
+        </button>
       </form>
 
       <p style={{ marginTop: '10px' }}>
@@ -164,12 +198,45 @@ const Signup = ({ setOtpEmail }) => {
   );
 };
 
-// Styles identiques à avant
-const containerStyle = { maxWidth: '400px', margin: 'auto', padding: '20px', backgroundColor: '#f9faff', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" };
+const containerStyle = {
+  maxWidth: '400px',
+  margin: 'auto',
+  padding: '20px',
+  backgroundColor: '#f9faff',
+  borderRadius: '8px',
+  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+};
 const formStyle = { display: 'flex', flexDirection: 'column', gap: '15px' };
-const inputStyle = { padding: '10px', fontSize: '16px', borderRadius: '8px', border: '1.5px solid #ccc', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
-const eyeButtonStyle = { position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px' };
-const buttonStyle = { backgroundColor: '#007bff', color: '#fff', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' };
+const inputStyle = {
+  padding: '10px',
+  fontSize: '16px',
+  borderRadius: '8px',
+  border: '1.5px solid #ccc',
+  fontFamily: 'inherit',
+  width: '100%',
+  boxSizing: 'border-box'
+};
+const eyeButtonStyle = {
+  position: 'absolute',
+  right: '10px',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: '18px'
+};
+const buttonStyle = {
+  backgroundColor: '#007bff',
+  color: '#fff',
+  fontWeight: 'bold',
+  border: 'none',
+  padding: '12px',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontSize: '16px'
+};
 const messageStyle = { color: 'red', fontWeight: 'bold' };
 
 export default Signup;
