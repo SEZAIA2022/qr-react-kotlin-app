@@ -47,7 +47,7 @@ const HelpPage = () => {
       setTasks(res.data.tasks);
     } catch (err) {
       console.error(err);
-      setError(`❌ Failed to load help tasks: ${err.response?.data?.error || err.message}`);
+      setError(`${err.response?.data?.error || err.message}`);
     } finally {
       setLoadingTasks(false);
     }

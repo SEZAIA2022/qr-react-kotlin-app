@@ -1783,7 +1783,7 @@ def generate_qr():
                 current_id, code, 0, application,
                 f"/static/qr/{application}{index}.png"
             ))
-
+            print(application)
             conn.commit()
 
             qr_list.append({
@@ -1927,7 +1927,7 @@ def get_about_us():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("SELECT about_us FROM static_pages WHERE application = %s", (application, ))
+    cursor.execute("SELECT about_us FROM static_pages WHERE application = %s LIMIT 1", (application, ))
     result = cursor.fetchone()
 
     cursor.close()
@@ -1965,7 +1965,7 @@ def get_term_of_use():
     application = request.args.get('application')  # Récupère le paramètre ?application=...
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT term_of_use FROM static_pages WHERE application = %s", (application, ))
+    cursor.execute("SELECT term_of_use FROM static_pages WHERE application = %s LIMIT 1", (application, ))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -2001,7 +2001,7 @@ def get_privacy_policy():
     application = request.args.get('application')  # Récupère le paramètre ?application=...
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT privacy_policy FROM static_pages WHERE application = %s", (application, ))
+    cursor.execute("SELECT privacy_policy FROM static_pages WHERE application = %s LIMIT 1", (application, ))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -2172,6 +2172,7 @@ def login_web():
         if verify_password(password, hashed_password):
             role = user[7] if len(user) > 7 else None
             application = user[5] if len(user) > 5 else None
+            print(application)
             return jsonify({
                 'status': 'success',
                 'message': "Login successful!",
@@ -2280,8 +2281,7 @@ def verify_otp():
         record['attempts'] += 1
         return jsonify({'status': 'error', 'message': 'Invalid OTP.'}), 400
 
-    # OTP correct, on récupère les infos stockées
-    email = record['email']
+    # Récupération infos
     password_hash = record['password_hash']
     city = record['city']
     country = record['country']
@@ -2293,28 +2293,40 @@ def verify_otp():
         cursor = conn.cursor()
 
         # Vérifier si l'utilisateur existe déjà
-        cursor.execute("SELECT * FROM users_web WHERE email = %s", (email,))
+        cursor.execute("SELECT id, is_activated FROM users_web WHERE email = %s", (email,))
         existing_user = cursor.fetchone()
+
         if existing_user:
-            return jsonify({'status': 'error', 'message': 'User already exists.'}), 400
+            user_id, is_activated = existing_user
+            if is_activated:
+                return jsonify({'status': 'error', 'message': 'User already exists.'}), 400
 
-        # Récupérer le max id existant
-        cursor.execute("SELECT MAX(id) FROM users_web")
-        max_id_result = cursor.fetchone()
-        max_id = max_id_result[0] if max_id_result[0] is not None else 0
-        new_id = max_id + 1
+            # Mise à jour de l'utilisateur inactif
+            cursor.execute("""
+                UPDATE users_web
+                SET password_hash = %s,
+                    city = %s,
+                    country = %s,
+                    application = %s,
+                    role = %s,
+                    created_at = NOW(),
+                    is_activated = %s
+                WHERE id = %s
+            """, (password_hash, city, country, application, role, True, user_id))
 
-        # Insérer l'utilisateur
-        cursor.execute("""
-            INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at, is_activated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)
-        """, (new_id, email, password_hash, city, country, application, role, True))
+        else:
+            # Nouvel utilisateur → trouver le prochain ID
+            cursor.execute("SELECT MAX(id) FROM users_web")
+            max_id_result = cursor.fetchone()
+            new_id = (max_id_result[0] or 0) + 1
 
-        # ✅ Insérer aussi dans static_pages
-        cursor.execute("""
-            INSERT INTO static_pages (application)
-            VALUES (%s)
-        """, (application,))
+            cursor.execute("""
+                INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at, is_activated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+            """, (new_id, email, password_hash, city, country, application, role, True))
+
+        # Ajouter dans static_pages
+        cursor.execute("INSERT INTO static_pages (application) VALUES (%s)", (application,))
 
         conn.commit()
 
@@ -2327,10 +2339,9 @@ def verify_otp():
         if conn:
             conn.close()
 
-    # Suppression du stockage temporaire OTP après succès
     register_otp_storage.pop(email, None)
-
     return jsonify({'status': 'success', 'message': 'OTP verified and user registered successfully.'}), 200
+
 
 
 @bp.route('/resend_otp_web', methods=['POST'])
@@ -2507,16 +2518,21 @@ def register_user():
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # 🔹 Récupérer le max ID actuel
+        cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM registred_users")
+        next_id = cursor.fetchone()[0]  # Récupère la valeur
+
+        # 🔹 Insérer en utilisant l'id calculé
         insert_query = """
-            INSERT INTO registred_users (email, username, role, application)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO registred_users (id, email, username, role, application)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(insert_query, (email, username, role, application))
+        cursor.execute(insert_query, (next_id, email, username, role, application))
         conn.commit()
 
-        return jsonify({'success': True, 'message': '✅ User registered successfully.'}), 201
+        return jsonify({'success': True, 'message': '✅ User registered successfully.', 'id': next_id}), 201
 
-    except IntegrityError as e: # type: ignore
+    except IntegrityError as e:  # type: ignore
         error_msg = str(e).lower()
         if "duplicate" in error_msg or "1062" in error_msg:
             if "email" in error_msg:
@@ -2528,7 +2544,6 @@ def register_user():
         return jsonify({'success': False, 'message': '❌ Database constraint error.'}), 400
 
     except Exception as e:
-        # Log the real error for debugging
         print("Unexpected error:", str(e))
         return jsonify({'success': False, 'message': '❌ Internal server error. Please try again later.'}), 500
 
@@ -2537,6 +2552,7 @@ def register_user():
             cursor.close()
         if conn:
             conn.close()
+
 
 
 @bp.route('/qr_history', methods=['GET'])

@@ -123,7 +123,7 @@ const QuestionForm = () => {
     }
 
     try {
-      await axios.put(`${process.env.REACT_APP_API_URL}/api/edit_question/${editId}`, {
+      await axios.put(`${process.env.REACT_APP_API_URL}/api/update_question/${editId}`, {
         text: editText,
       });
       setMessage('✅ Question modifiée.');
