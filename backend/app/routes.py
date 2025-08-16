@@ -7,7 +7,7 @@ import os
 import random
 import re
 from datetime import datetime, timedelta
-
+from mysql.connector.errors import IntegrityError  
 import firebase_admin
 from firebase_admin import messaging, credentials
 
@@ -42,6 +42,7 @@ def login():
     username = data.get('username')
     password = data.get('password')
     application = data.get('application_name')
+    token = data.get('token')  # On récupère le token ici
 
     if not username or not password:
         return jsonify({'status': 'error', 'message': 'Username or email and password required.'}), 400
@@ -49,8 +50,10 @@ def login():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE (username = %s OR email = %s) AND application = %s",
-                       (username, username, application))
+        cursor.execute(
+            "SELECT * FROM users WHERE (username = %s OR email = %s) AND application = %s",
+            (username, username, application)
+        )
         users = cursor.fetchone()
     except Exception as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
@@ -71,16 +74,29 @@ def login():
             user = users[1]
             email = users[3]
 
-            # ✅ Met à jour is_logged à TRUE
+            # Met à jour is_logged et éventuellement token
             try:
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE users SET is_logged = TRUE 
-                    WHERE (username = %s OR email = %s) AND application = %s
-                """, (username, username, application))
+                
+                if token:
+                    cursor.execute("""
+                        UPDATE users 
+                        SET is_logged = TRUE, token = %s
+                        WHERE (username = %s OR email = %s) AND application = %s
+                    """, (token, username, username, application))
+                else:
+                    cursor.execute("""
+                        UPDATE users 
+                        SET is_logged = TRUE
+                        WHERE (username = %s OR email = %s) AND application = %s
+                    """, (username, username, application))
+                
                 conn.commit()
+
             except Exception as err:
+                if conn:
+                    conn.rollback()
                 return jsonify({'status': 'error', 'message': f'Update error: {str(err)}'}), 500
             finally:
                 if cursor: cursor.close()
@@ -97,6 +113,7 @@ def login():
             return jsonify({'status': 'error', 'message': "Incorrect username or password."}), 401
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Processing error: {str(e)}'}), 500
+
 
 
 
@@ -179,7 +196,6 @@ firebase_admin.initialize_app(cred)
 def notify_admin():
     data = request.get_json()
     data = request.get_json()
-    print("Incoming JSON:", data)  # Add this line for debugging
 
     if not data:
         return jsonify({"error": "Missing JSON data"}), 400
@@ -208,7 +224,7 @@ def notify_admin():
             return jsonify({"error": "No admin tokens registered"}), 400
 
         # Choose title based on role
-        title = "Confirm" if role == 'user' else "Admin Notification"
+        title = "Confirm" if role == 'user' else "Ask repair"
 
     except Exception as e:
         print("Error:", str(e))
@@ -222,10 +238,10 @@ def notify_admin():
 
     # Crée un MulticastMessage avec la notification et la liste des tokens
     multicast_message = messaging.MulticastMessage(
-        notification=messaging.Notification(
-            title=title,
-            body=message_text
-        ),
+         data={
+            "title": title,
+            "body": message_text
+        },
         tokens=list(admin_tokens)
     )
 
@@ -462,15 +478,24 @@ def verify_register():
         record['attempts'] += 1
         return jsonify({'status': 'error', 'message': 'Incorrect OTP.'}), 400
 
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Récupérer le MAX(id) actuel
+        cursor.execute("SELECT COALESCE(MAX(id), 0) FROM users")
+        max_id = cursor.fetchone()[0]
+        new_id = max_id + 1
+
+        # Insérer l'utilisateur avec l'ID calculé
         cursor.execute("""
             INSERT INTO users 
-                (username, email, password_hash, phone_number, address, role, city, code_postal, application)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (id, username, email, password_hash, phone_number, address, role, city, code_postal, application)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
+            new_id,
             record['username'],
             record['email'],
             record['password_hash'],
@@ -480,13 +505,19 @@ def verify_register():
             record['city'],
             record['postal_code'],
             record['application']
-
         ))
-        conn.commit()
 
+        # Marquer l'utilisateur comme activé dans registred_users
+        cursor.execute("""
+            UPDATE registred_users
+            SET is_activated = TRUE
+            WHERE email = %s AND application = %s
+        """, (record['email'], record['application']))
+
+        conn.commit()
         del register_otp_storage[email]
 
-        return jsonify({'status': 'success', 'message': 'User successfully verified and registered.'}), 200
+        return jsonify({'status': 'success', 'message': 'User successfully verified and registered.', 'id': new_id}), 200
 
     except Exception as e:
         print(str(e))
@@ -1217,77 +1248,80 @@ def exist_qr():
 
     if not qr_code:
         return jsonify({'status': 'error', 'message': 'QR code is required.'}), 400
+    if role not in ("user", "admin"):
+        return jsonify({'status': 'error', 'message': 'Invalid role'}), 400
+    if not application:
+        return jsonify({'status': 'error', 'message': 'Application name is required.'}), 400
 
+    conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Vérifier l'existence du QR code
-        cursor.execute("SELECT is_active FROM qr_codes WHERE qr_code = %s AND application = %s ", (qr_code, application))
-        qr_result = cursor.fetchone()
-
-        if qr_result is None:
-            return jsonify({'status': 'error', 'message': 'Unknown QR code'}), 404
-
-        is_active = qr_result[0]
-
-        # Si le QR code est inactif
-        if not is_active:
-            return jsonify({
-                'status': 'success',
-                'message': 'QR code is not active',
-                'is_active': False
-            }), 200
-
-        # Vérifier si l'utilisateur est autorisé (si role = user)
-        if role == "user":
+        with conn.cursor(dictionary=True) as cursor:
+            # Vérifier l'existence du QR code
             cursor.execute(
-                "SELECT * FROM qr_codes WHERE qr_code = %s AND user = %s",
-                (qr_code, username)
+                "SELECT is_active FROM qr_codes WHERE qr_code = %s AND application = %s",
+                (qr_code, application)
             )
-            user_qr = cursor.fetchone()
-            if not user_qr:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'QR code is not valid for this user.'
-                }), 403  # Forbidden
+            qr_result = cursor.fetchone()
+            if qr_result is None:
+                return jsonify({'status': 'error', 'message': 'Unknown QR code'}), 404
+            if not qr_result['is_active']:
+                return jsonify({'status': 'success', 'message': 'QR code is not active', 'is_active': False}), 200
 
-        # Vérifier s’il y a une réparation en cours
-        cursor.execute(
-            "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s AND user_tech = %s",
-            (qr_code, "Processing", username)
-        )
-        repair_status = cursor.fetchone()
+            # Vérifier si l'utilisateur est autorisé
+            if role == "user":
+                cursor.execute(
+                    "SELECT * FROM qr_codes WHERE qr_code = %s AND user = %s",
+                    (qr_code, username)
+                )
+                user_qr = cursor.fetchone()
+                if not user_qr:
+                    return jsonify({'status': 'error', 'message': 'QR code is not valid for this user.'}), 403
 
-        # Réponse générale
-        response = {
-            'status': 'success',
-            'message': 'QR code is active',
-            'is_active': True
-        }
+            # Vérifier s’il y a une réparation en cours
+            if role == "admin":
+                cursor.execute(
+                    """
+                    SELECT id, status, user_tech 
+                    FROM ask_repair 
+                    WHERE qr_code = %s AND status = %s AND user_tech = %s
+                    """,
+                    (qr_code, "Processing", username)
+                )
+            else:  # user
+                cursor.execute(
+                    "SELECT id, status FROM ask_repair WHERE qr_code = %s AND status = %s",
+                    (qr_code, "Processing")
+                )
+            repair_status = cursor.fetchone()
+            logging.info(f"Repair status: {repair_status}")
 
-        if repair_status:
-            response.update({
-                'status_repair': repair_status[1],
-                'id_ask_repair': repair_status[0],
-                'message': 'QR code is active and currently under repair (Processing)'
-            })
-        elif role == "admin":
-            response['message'] = 'QR code is active with no repair request'
+            # Construire la réponse
+            response = {'status': 'success', 'is_active': True}
 
-        return jsonify(response), 200
+            if repair_status:
+                response.update({
+                    'status_repair': repair_status['status'],
+                    'id_ask_repair': repair_status['id'],
+                    'message': 'QR code is active and currently under repair (Processing)'
+                })
+            else:
+                if role == "admin":
+                    response['message'] = 'QR code is active with no repair request'
+                else:  # user
+                    response['message'] = 'QR code is active'
+
+            return jsonify(response), 200
 
     except mysql.connector.Error as err:
-        print(str(err))
+        logging.error(f"Database error: {err}")
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
-
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        return jsonify({'status': 'error', 'message': f'Unexpected error: {str(e)}'}), 500
     finally:
-        if cursor:
-            cursor.close()
         if conn and conn.is_connected():
             conn.close()
-
-
 
 
 
@@ -1808,8 +1842,6 @@ def generate_qr():
     return jsonify(qr_list), 201
 
 
-
-
 @bp.route("/questions", methods=["POST"])
 def add_question():
     data = request.get_json()
@@ -1818,14 +1850,14 @@ def add_question():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Récupérer le max id actuel
+    # Get current max id
     cursor.execute("SELECT MAX(id) FROM questions")
     max_id = cursor.fetchone()[0]
     if max_id is None:
         max_id = 0
     new_id = max_id + 1
 
-    # Insérer la question avec l'id spécifié
+    # Insert question with specified id
     cursor.execute(
         "INSERT INTO questions (id, text, application) VALUES (%s, %s, %s)",
         (new_id, text, application)
@@ -1835,7 +1867,7 @@ def add_question():
     cursor.close()
     conn.close()
 
-    return jsonify({"message": "Question ajoutée", "id": new_id}), 201
+    return jsonify({"message": "Question added", "id": new_id}), 201
 
 
 @bp.route('/questions', methods=['GET'])  # utilisé par l'application mobile Kotlin
@@ -1866,20 +1898,28 @@ def get_questions():
 @bp.route('/delete_question/<int:question_id>', methods=['DELETE'])
 def delete_question(question_id):
     conn = None
+    cursor = None
     try:
-        # Connexion à la base de données MySQL
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Supprimer la question
+        # Vérifier si la question existe
+        cursor.execute("SELECT COUNT(*) FROM questions WHERE id = %s", (question_id,))
+        if cursor.fetchone()[0] == 0:
+            return jsonify({
+                "status": "error",
+                "message": "Question not found"
+            }), 404
+
+        # Supprimer la question
         cursor.execute("DELETE FROM questions WHERE id = %s", (question_id,))
         conn.commit()
 
-        # 2. Récupérer le MAX(id) restant dans la table
+        # Récupérer le MAX(id) restant dans la table
         cursor.execute("SELECT MAX(id) FROM questions;")
         max_id = cursor.fetchone()[0]
 
-        # 3. Définir la nouvelle valeur d'AUTO_INCREMENT (max_id + 1 ou 1 si vide)
+        # Définir la nouvelle valeur d'AUTO_INCREMENT
         new_auto_inc = (max_id or 0) + 1
         cursor.execute(f"ALTER TABLE questions AUTO_INCREMENT = {new_auto_inc};")
         conn.commit()
@@ -1897,22 +1937,24 @@ def delete_question(question_id):
         }), 500
 
     finally:
-        if conn:
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
+
 
 @bp.route('/update_question/<int:question_id>', methods=['PUT'])
 def update_question(question_id):
     data = request.get_json()
     new_text = data.get('text', '').strip()
     if not new_text:
-        return jsonify({'status': 'error', 'message': 'Le texte ne peut pas être vide.'}), 400
+        return jsonify({'status': 'error', 'message': 'Text cannot be empty.'}), 400
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE questions SET text = %s WHERE id = %s", (new_text, question_id))
         conn.commit()
-        return jsonify({"status": "success", "message": "Question modifiée avec succès."}), 200
+        return jsonify({"status": "success", "message": "Question updated successfully."}), 200
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': str(err)}), 500
     finally:
@@ -1957,7 +1999,7 @@ def update_about_us():
     cursor.close()
     conn.close()
 
-    return jsonify({"message": "✅ About Us updated successfully.", "about_us": new_text})
+    return jsonify({"message": " About Us updated successfully.", "about_us": new_text})
 
 # 📘 GET: Récupérer le champ term_of_use
 @bp.route('/term_of_use', methods=['GET'])
@@ -1992,7 +2034,7 @@ def update_term_of_use():
     cursor.close()
     conn.close()
 
-    return jsonify({"message": "✅ Terms of Use updated successfully.", "term_of_use": new_text})
+    return jsonify({"message": " Terms of Use updated successfully.", "term_of_use": new_text})
 
 
 # 📘 GET: Récupérer le champ privacy_policy
@@ -2028,7 +2070,7 @@ def update_privacy_policy():
     cursor.close()
     conn.close()
 
-    return jsonify({"message": "✅ Privacy Policy updated successfully.", "privacy_policy": new_text})
+    return jsonify({"message": " Privacy Policy updated successfully.", "privacy_policy": new_text})
 
 # 📘 GET : récupérer toutes les tâches help (id, title_help, help)
 @bp.route('/help_tasks', methods=['GET'])
@@ -2078,7 +2120,7 @@ def update_help_task(task_id):
     conn.close()
 
     return jsonify({
-        "message": "✅ Help task updated successfully.",
+        "message": " Help task updated successfully.",
         "task": {"id": task_id, "title_help": new_title, "help": new_content}
     })
 
@@ -2105,7 +2147,7 @@ def add_help_task():
     conn.close()
 
     return jsonify({
-        "message": "✅ Tâche ajoutée avec succès.",
+        "message": " Tâche ajoutée avec succès.",
         "task": {
             "id": new_id,
             "title_help": title_help,
@@ -2130,7 +2172,7 @@ def delete_help_task(task_id):
     cursor.close()
     conn.close()
 
-    return jsonify({"message": "✅ Tâche supprimée avec succès."})
+    return jsonify({"message": " Tâche supprimée avec succès."})
 
 
 @bp.route('/login_web', methods=['POST'])
@@ -2494,35 +2536,51 @@ def change_password_web_forget():
         conn.close()
 
 
+
+
 @bp.route('/register_user', methods=['POST'])
 def register_user():
     data = request.get_json()
 
-    # Validation claire
-    missing_fields = [field for field in ['email', 'username', 'role', 'application'] if not data.get(field)]
+    #  Validation des champs
+    required_fields = ['email', 'username', 'role', 'application']
+    missing_fields = [f for f in required_fields if not data.get(f)]
     if missing_fields:
         return jsonify({
             'success': False,
-            'message': f"The following field(s) are required: {', '.join(missing_fields)}"
+            'message': f" Missing required field(s): {', '.join(missing_fields)}"
         }), 400
 
-    email = data.get('email')
-    username = data.get('username')
-    role = data.get('role')
-    application = data.get('application')
+    email = data['email']
+    username = data['username']
+    role = data['role']
+    application = data['application']
 
     conn = None
     cursor = None
 
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
 
-        # 🔹 Récupérer le max ID actuel
-        cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM registred_users")
-        next_id = cursor.fetchone()[0]  # Récupère la valeur
+        # 🔍 Vérifier si l'email existe déjà
+        cursor.execute("SELECT id FROM registred_users WHERE email = %s", (email,))
+        if cursor.fetchone():
+            return jsonify({'success': False, 'message': ' This email is already registered.'}), 400
 
-        # 🔹 Insérer en utilisant l'id calculé
+        # 🔍 Vérifier si username + application existe déjà
+        cursor.execute("""
+            SELECT id FROM registred_users 
+            WHERE username = %s AND application = %s
+        """, (username, application))
+        if cursor.fetchone():
+            return jsonify({'success': False, 'message': ' This username is already used for this application.'}), 400
+
+        # 🔹 Calculer prochain ID
+        cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM registred_users")
+        next_id = cursor.fetchone()['next_id']
+
+        # 🔹 Insérer le nouvel utilisateur
         insert_query = """
             INSERT INTO registred_users (id, email, username, role, application)
             VALUES (%s, %s, %s, %s, %s)
@@ -2530,28 +2588,22 @@ def register_user():
         cursor.execute(insert_query, (next_id, email, username, role, application))
         conn.commit()
 
-        return jsonify({'success': True, 'message': '✅ User registered successfully.', 'id': next_id}), 201
-
-    except IntegrityError as e:  # type: ignore
-        error_msg = str(e).lower()
-        if "duplicate" in error_msg or "1062" in error_msg:
-            if "email" in error_msg:
-                return jsonify({'success': False, 'message': '❌ Email is already in use.'}), 400
-            elif "username" in error_msg:
-                return jsonify({'success': False, 'message': '❌ Username is already in use.'}), 400
-            else:
-                return jsonify({'success': False, 'message': '❌ Email or username already used.'}), 400
-        return jsonify({'success': False, 'message': '❌ Database constraint error.'}), 400
+        return jsonify({
+            'success': True,
+            'message': ' User registered successfully.',
+            'id': next_id
+        }), 201
 
     except Exception as e:
         print("Unexpected error:", str(e))
-        return jsonify({'success': False, 'message': '❌ Internal server error. Please try again later.'}), 500
+        return jsonify({'success': False, 'message': ' Internal server error. Please try again later.'}), 500
 
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
+
 
 
 
@@ -2602,11 +2654,11 @@ def get_all_users():
         LEFT JOIN (
             SELECT application, COUNT(*) AS qrcode_count
             FROM qr_codes
-            WHERE is_active = 1
             GROUP BY application
         ) q ON u.application = q.application
-        WHERE u.role = 'user'
+        
         """
+        # WHERE u.role = 'user'
 
         cursor.execute(query)
         users = cursor.fetchall()
@@ -2662,6 +2714,88 @@ def user_register_web():
 
     return jsonify({'status': 'success'}), 201
 
+@bp.route('/delete_user_web/<int:user_id>', methods=['DELETE'])
+def delete_user_web(user_id):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM users_web WHERE id = %s", (user_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({'success': False, 'message': 'User not found.'}), 404
+
+        return jsonify({'success': True, 'message': ' User deleted successfully.'})
+
+    except Exception as e:
+        print("Error deleting user:", str(e))
+        return jsonify({'success': False, 'message': ' Server error.'}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@bp.route('/get_users', methods=['POST'])
+def get_users():
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, email, username, application, role FROM registred_users")
+        users = cursor.fetchall()
+
+        return jsonify({'success': True, 'users': users}), 200
+
+    except Exception as e:
+        print("Unexpected error:", str(e))
+        return jsonify({'success': False, 'message': '❌ Internal server error. Please try again later.'}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@bp.route('/delete_user', methods=['POST'])
+def delete_user():
+    data = request.get_json()
+    user_id = data.get('id')
+
+    if not user_id:
+        return jsonify({'success': False, 'message': '❌ Missing required field: id'}), 400
+
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM registred_users WHERE id = %s", (user_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({'success': False, 'message': '❌ User not found.'}), 404
+
+        return jsonify({'success': True, 'message': '✅ User deleted successfully.'}), 200
+
+    except Exception as e:
+        print("Unexpected error:", str(e))
+        return jsonify({'success': False, 'message': '❌ Internal server error. Please try again later.'}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # @bp.route('/register_token', methods=['POST'])

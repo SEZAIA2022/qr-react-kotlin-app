@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { FiEye, FiEyeOff } from 'react-icons/fi';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const CreateNewPassword = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Récupère l'email passé depuis /verify-otp
   const email = location.state?.email || '';
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const validatePassword = (pwd) => {
@@ -22,30 +24,24 @@ const CreateNewPassword = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage('');
-    setMessageType('');
 
     if (!password || !confirmPassword) {
-      setMessage('Please fill in both fields.');
-      setMessageType('error');
+      toast.error('Please fill in both fields.');
       return;
     }
 
     if (!validatePassword(password)) {
-      setMessage('Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.');
-      setMessageType('error');
+      toast.error('Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.');
       return;
     }
 
     if (password !== confirmPassword) {
-      setMessage('Passwords do not match.');
-      setMessageType('error');
+      toast.error('Passwords do not match.');
       return;
     }
 
     if (!email) {
-      setMessage('Missing email information. Please restart the password reset process.');
-      setMessageType('error');
+      toast.error('Missing email information. Please restart the password reset process.');
       return;
     }
 
@@ -59,18 +55,18 @@ const CreateNewPassword = () => {
       });
 
       if (res.status === 200) {
-        setMessage('Password updated successfully. Redirecting to login...');
-        setMessageType('success');
+        const backendMessage = res.data.message || 'Password updated successfully. Redirecting to login...';
+        toast.success(backendMessage);
         setTimeout(() => {
-            navigate('/login', { replace: true });
+          navigate('/login', { replace: true });
         }, 3000);
-     } else {
-        setMessage(res.data.message || 'Unexpected error occurred.');
-        setMessageType('error');
+      } else {
+        const backendMessage = res.data.message || 'Unexpected error occurred.';
+        toast.error(backendMessage);
       }
     } catch (err) {
-      setMessage(err.response?.data?.message || 'Server error.');
-      setMessageType('error');
+      const backendMessage = err.response?.data?.message || 'Server error.';
+      toast.error(backendMessage);
     } finally {
       setLoading(false);
     }
@@ -80,29 +76,45 @@ const CreateNewPassword = () => {
     <div style={containerStyle}>
       <h2>Create New Password</h2>
 
-      {message && (
-        <p style={{ ...messageStyle, color: messageType === 'error' ? 'red' : 'green' }}>
-          {message}
-        </p>
-      )}
-
       <form onSubmit={handleSubmit} style={formStyle}>
-        <input
-          type="password"
-          placeholder="New Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Confirm New Password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          style={inputStyle}
-          required
-        />
+        <div style={{ position: 'relative' }}>
+          <input
+            type={showPassword ? 'text' : 'password'}
+            placeholder="New Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ ...inputStyle, paddingRight: '40px' }}
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            style={eyeButtonStyle}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <FiEyeOff /> : <FiEye />}
+          </button>
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <input
+            type={showConfirmPassword ? 'text' : 'password'}
+            placeholder="Confirm New Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            style={{ ...inputStyle, paddingRight: '40px' }}
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+            style={eyeButtonStyle}
+            aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+          >
+            {showConfirmPassword ? <FiEyeOff /> : <FiEye />}
+          </button>
+        </div>
+
         <button type="submit" disabled={loading} style={buttonStyle}>
           {loading ? 'Saving...' : 'Save Password'}
         </button>
@@ -111,6 +123,9 @@ const CreateNewPassword = () => {
       <p style={{ marginTop: '10px' }}>
         Remembered your password? <Link to="/login">Login</Link>
       </p>
+
+      {/* Toast container obligatoire pour afficher les toasts */}
+      <ToastContainer position="top-center" autoClose={4000} />
     </div>
   );
 };
@@ -138,6 +153,19 @@ const inputStyle = {
   borderRadius: '8px',
   border: '1.5px solid #ccc',
   fontFamily: 'inherit',
+  width: '100%',
+  boxSizing: 'border-box',
+};
+
+const eyeButtonStyle = {
+  position: 'absolute',
+  right: '10px',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: '18px',
 };
 
 const buttonStyle = {
@@ -149,11 +177,6 @@ const buttonStyle = {
   borderRadius: '8px',
   cursor: 'pointer',
   fontSize: '16px',
-};
-
-const messageStyle = {
-  fontWeight: 'bold',
-  marginBottom: '10px',
 };
 
 export default CreateNewPassword;

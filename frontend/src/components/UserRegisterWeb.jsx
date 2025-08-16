@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const UserRegisterWeb = () => {
   const [formData, setFormData] = useState({
@@ -10,9 +12,7 @@ const UserRegisterWeb = () => {
     role: 'user',
   });
 
-  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isError, setIsError] = useState(false);
 
   const handleChange = e => {
     const { name, value } = e.target;
@@ -23,8 +23,7 @@ const UserRegisterWeb = () => {
     e.preventDefault();
 
     if (!formData.email || !formData.application || !formData.role) {
-      setIsError(true);
-      setMessage('Please fill in all required fields.');
+      toast.error('Please fill in all required fields.');
       return;
     }
 
@@ -35,7 +34,6 @@ const UserRegisterWeb = () => {
     };
 
     setLoading(true);
-    setMessage('');
 
     try {
       const response = await axios.post(
@@ -44,8 +42,7 @@ const UserRegisterWeb = () => {
       );
 
       if (response.data.status === 'success') {
-        setIsError(false);
-        setMessage('User registered successfully!');
+        toast.success('✅ User registered successfully!');
         setFormData({
           email: '',
           application: '',
@@ -54,12 +51,10 @@ const UserRegisterWeb = () => {
           role: 'user',
         });
       } else {
-        setIsError(true);
-        setMessage(response.data.message || 'Registration failed.');
+        toast.error(response.data.message || 'Registration failed.');
       }
     } catch (error) {
-      setIsError(true);
-      setMessage('Server or network error.');
+      toast.error('❌ Server or network error.');
     } finally {
       setLoading(false);
     }
@@ -115,14 +110,12 @@ const UserRegisterWeb = () => {
         </button>
       </form>
 
-      {message && (
-        <p style={isError ? errorStyle : successStyle}>{message}</p>
-      )}
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar />
     </div>
   );
 };
 
-// Styles
+// Same styles you already have
 const containerStyle = {
   maxWidth: '600px',
   margin: '30px auto 40px',
@@ -189,18 +182,6 @@ const buttonStyle = {
   fontWeight: '600',
   width: '50%',
   minWidth: '150px',
-};
-
-const errorStyle = {
-  color: '#d9534f',
-  fontWeight: '600',
-  marginTop: '15px',
-};
-
-const successStyle = {
-  color: '#28a745',
-  fontWeight: '600',
-  marginTop: '15px',
 };
 
 export default UserRegisterWeb;

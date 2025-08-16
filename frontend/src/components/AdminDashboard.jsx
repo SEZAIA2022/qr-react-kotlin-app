@@ -7,23 +7,38 @@ const AdminDashboard = ({ userEmail }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/get_all_user_web`);
-        if (res.data.status === 'success') {
-          setUsers(res.data.users);
-        } else {
-          setError('Error fetching users.');
-        }
-      } catch (err) {
-        setError('Network or server error.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchUsers();
   }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/get_all_user_web`);
+      if (res.data.status === 'success') {
+        setUsers(res.data.users);
+      } else {
+        setError('Error fetching users.');
+      }
+    } catch (err) {
+      setError('Network or server error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
+
+    try {
+      const res = await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_user_web/${id}`);
+      if (res.data.success) {
+        setUsers(users.filter(user => user.id !== id));
+      } else {
+        alert(res.data.message || 'Error deleting user.');
+      }
+    } catch (err) {
+      alert('Network or server error.');
+    }
+  };
 
   return (
     <div style={containerStyle}>
@@ -42,26 +57,41 @@ const AdminDashboard = ({ userEmail }) => {
               <th style={thStyle}>Email</th>
               <th style={thStyle}>City</th>
               <th style={thStyle}>Country</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Role</th>
               <th style={thStyle}>QR Code Count</th>
+              <th style={thStyle}>Actions</th>
             </tr>
           </thead>
-          <tbody>{users.map((user, index) => (
-            <tr key={user.id}>
-              <td style={tdStyle}>{index + 1}</td> 
-              <td style={tdStyle}>{user.application}</td>
-              <td style={tdStyle}>{user.email}</td>
-              <td style={tdStyle}>{user.city || '-'}</td>
-              <td style={tdStyle}>{user.country || '-'}</td>
-              <td style={tdStyle}>{user.qrcode_count}</td>
-            </tr>
-          ))}</tbody>
+          <tbody>
+            {users.map((user, index) => (
+              <tr key={user.id}>
+                <td style={tdStyle}>{index + 1}</td> 
+                <td style={tdStyle}>{user.application}</td>
+                <td style={tdStyle}>{user.email}</td>
+                <td style={tdStyle}>{user.city || '-'}</td>
+                <td style={tdStyle}>{user.country || '-'}</td>
+                <td style={tdStyle}> {user.is_activated === 1 ? 'Activated' : 'Not activated' || '-'}</td>
+                <td style={tdStyle}>{user.role}</td>
+                <td style={tdStyle}>{user.qrcode_count}</td>
+                <td style={tdStyle}>
+                  <button 
+                    style={deleteBtnStyle} 
+                    onClick={() => handleDelete(user.id)}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       )}
     </div>
   );
 };
 
-// Styles matching your design, adjusted for table display
+// Styles
 const containerStyle = {
   maxWidth: '900px',
   margin: '40px auto',
@@ -87,6 +117,15 @@ const thStyle = {
 const tdStyle = {
   borderBottom: '1px solid #ccc',
   padding: '10px',
+};
+
+const deleteBtnStyle = {
+  backgroundColor: '#dc3545',
+  color: 'white',
+  border: 'none',
+  padding: '6px 10px',
+  borderRadius: '4px',
+  cursor: 'pointer',
 };
 
 export default AdminDashboard;

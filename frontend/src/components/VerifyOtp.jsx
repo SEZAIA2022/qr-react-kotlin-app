@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; 
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const VerifyOtp = ({ setOtpEmail }) => {
   const [otp, setOtp] = useState('');
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [canResend, setCanResend] = useState(true);
@@ -18,15 +18,12 @@ const VerifyOtp = ({ setOtpEmail }) => {
   const emailFromState = location.state?.email;
   const previousPageFromState = location.state?.previousPage;
 
-
   useEffect(() => {
     const handlePopState = (event) => {
-      // Ici on bloque le retour en forçant la navigation vers login (ou autre page)
       navigate('/login', { replace: true });
     };
 
     window.addEventListener('popstate', handlePopState);
-
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
@@ -51,7 +48,6 @@ const VerifyOtp = ({ setOtpEmail }) => {
     }
   }, [countdown]);
 
-
   const startCountdown = (seconds) => {
     setCountdown(seconds);
     setCanResend(false);
@@ -62,13 +58,10 @@ const VerifyOtp = ({ setOtpEmail }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage('');
-    setMessageType('');
     setLoading(true);
 
     if (!email) {
-      setMessage('Email is required to verify OTP.');
-      setMessageType('error');
+      toast.error('Email is required to verify OTP.');
       setLoading(false);
       return;
     }
@@ -83,11 +76,9 @@ const VerifyOtp = ({ setOtpEmail }) => {
       });
 
       if (res.data.status === 'success') {
-        setMessage(res.data.message);
-        setMessageType('success');
+        toast.success(res.data.message || 'Verification successful.');
         setOtpEmail(null);
 
-        // Clean up storage
         sessionStorage.removeItem('otpEmail');
         sessionStorage.removeItem('previousPage');
 
@@ -97,12 +88,10 @@ const VerifyOtp = ({ setOtpEmail }) => {
           navigate('/login', { replace: true });
         }
       } else {
-        setMessage(res.data.message || 'Verification failed.');
-        setMessageType('error');
+        toast.error(res.data.message || 'Verification failed.');
       }
     } catch (err) {
-      setMessage(err.response?.data?.message || 'Server error.');
-      setMessageType('error');
+      toast.error(err.response?.data?.message || 'Server error.');
     }
 
     setLoading(false);
@@ -111,8 +100,6 @@ const VerifyOtp = ({ setOtpEmail }) => {
   const handleResend = async () => {
     if (!canResend || !email) return;
 
-    setMessage('');
-    setMessageType('');
     setResendLoading(true);
     setCanResend(false);
 
@@ -120,15 +107,13 @@ const VerifyOtp = ({ setOtpEmail }) => {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/resend_otp_web`, {
         email,
         previous_page: previousPage,
-        application_name: 'myAppWeb', // si besoin par le backend
+        application_name: 'myAppWeb',
       });
 
-      setMessage(res.data.message || 'OTP resent successfully.');
-      setMessageType('success');
+      toast.success(res.data.message || 'OTP resent successfully.');
       startCountdown(30);
     } catch (err) {
-      setMessage(err.response?.data?.message || 'Failed to resend OTP.');
-      setMessageType('error');
+      toast.error(err.response?.data?.message || 'Failed to resend OTP.');
       setCanResend(true);
     }
 
@@ -153,7 +138,7 @@ const VerifyOtp = ({ setOtpEmail }) => {
         </button>
       </form>
 
-      <p style={{ marginTop: '15px', fontSize: '14px' }}>
+      <p style={{ marginTop: 15, fontSize: 14 }}>
         Didn’t receive the OTP?{' '}
         <span
           onClick={!canResend || resendLoading ? null : handleResend}
@@ -173,16 +158,13 @@ const VerifyOtp = ({ setOtpEmail }) => {
         </span>
       </p>
 
-      {message && (
-        <p style={{ ...messageStyle, color: messageType === 'error' ? 'red' : 'green' }}>
-          {message}
-        </p>
-      )}
+      {/* ToastContainer pour afficher les toasts */}
+      <ToastContainer position="top-center" autoClose={4000} />
     </div>
   );
 };
 
-// Styles
+// Styles (inchangés)
 const containerStyle = {
   maxWidth: '400px',
   margin: '30px auto',
@@ -216,11 +198,6 @@ const buttonStyle = {
   borderRadius: '8px',
   cursor: 'pointer',
   fontSize: '16px',
-};
-
-const messageStyle = {
-  fontWeight: 'bold',
-  marginTop: '10px',
 };
 
 export default VerifyOtp;

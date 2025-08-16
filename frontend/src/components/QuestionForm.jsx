@@ -10,35 +10,36 @@ const QuestionForm = () => {
   const [editText, setEditText] = useState('');
   const [application, setApplication] = useState('');
 
-  // Charger l'application depuis le localStorage
+  // Load application from localStorage
   useEffect(() => {
     const storedApplication = localStorage.getItem('userApplication');
     if (storedApplication) setApplication(storedApplication);
   }, []);
+
   useEffect(() => {
     if (application && application.trim() !== '') {
       fetchQuestions();
     }
   }, [application]);
 
-  // Récupérer les questions
+  // Fetch questions
   const fetchQuestions = async () => {
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`, {params : {application}});
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`, { params: { application } });
       if (Array.isArray(res.data)) {
         setQuestions(res.data);
       } else if (res.data?.questions && Array.isArray(res.data.questions)) {
         setQuestions(res.data.questions);
       } else {
         setQuestions([]);
-        console.warn('Format de réponse inattendu :', res.data);
+        console.warn('Unexpected response format:', res.data);
       }
       setSelected({});
       setEditId(null);
       setEditText('');
     } catch (error) {
-      console.error('Erreur lors du chargement des questions :', error);
-      setMessage('❌ Erreur de chargement des questions.');
+      console.error('Error loading questions:', error);
+      setMessage('❌ Failed to load questions.');
     }
   };
 
@@ -51,16 +52,20 @@ const QuestionForm = () => {
     if (!text.trim()) return;
 
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, {
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/questions`, {
         text,
         application,
       });
-      setMessage('✅ Question ajoutée avec succès.');
+      setMessage(res.data?.message || '✅ Question added successfully.');
       setText('');
       fetchQuestions();
     } catch (error) {
-      console.error('Erreur ajout question :', error);
-      setMessage('❌ Erreur lors de l’ajout de la question.');
+      console.error('Error adding question:', error);
+      if (error.response?.data?.message) {
+        setMessage(error.response.data.message);
+      } else {
+        setMessage('❌ Failed to add question.');
+      }
     }
   };
 
@@ -74,35 +79,34 @@ const QuestionForm = () => {
   const deleteSelected = async () => {
     const idsToDelete = Object.entries(selected)
       .filter(([_, isChecked]) => isChecked)
-      .map(([id]) => id);
+      .map(([id]) => Number(id)); // Convertir en nombre
 
     if (idsToDelete.length === 0) {
-      setMessage('Veuillez sélectionner au moins une question à supprimer.');
+      setMessage('Please select at least one question to delete.');
       return;
     }
 
     try {
-      await Promise.all(
-        idsToDelete.map((id) =>
-          axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`)
-        )
-      );
-      setMessage(`✅ ${idsToDelete.length} question(s) supprimée(s).`);
+      for (const id of idsToDelete) {
+        const res = await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
+        setMessage(res.data?.message || `✅ Question ${id} deleted.`);
+      }
       fetchQuestions();
+      setSelected({});
     } catch (error) {
-      console.error('Erreur suppression multiple :', error);
-      setMessage('❌ Erreur lors de la suppression.');
+      console.error('Error deleting multiple questions:', error);
+      setMessage(error.response?.data?.message || '❌ Failed to delete selected questions.');
     }
   };
 
   const deleteQuestion = async (id) => {
     try {
-      await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
-      setMessage('✅ Question supprimée.');
+      const res = await axios.delete(`${process.env.REACT_APP_API_URL}/api/delete_question/${id}`);
+      setMessage(res.data?.message || '✅ Question deleted.');
       fetchQuestions();
     } catch (error) {
-      console.error('Erreur suppression :', error);
-      setMessage('❌ Erreur lors de la suppression.');
+      console.error('Error deleting question:', error);
+      setMessage(error.response?.data?.message || '❌ Failed to delete question.');
     }
   };
 
@@ -118,47 +122,51 @@ const QuestionForm = () => {
 
   const saveEdit = async () => {
     if (!editText.trim()) {
-      setMessage('Le texte ne peut pas être vide.');
+      setMessage('Text cannot be empty.');
       return;
     }
 
     try {
-      await axios.put(`${process.env.REACT_APP_API_URL}/api/update_question/${editId}`, {
+      const res = await axios.put(`${process.env.REACT_APP_API_URL}/api/update_question/${editId}`, {
         text: editText,
       });
-      setMessage('✅ Question modifiée.');
+      setMessage(res.data?.message || '✅ Question updated.');
       setEditId(null);
       setEditText('');
       fetchQuestions();
     } catch (error) {
-      console.error('Erreur modification :', error);
-      setMessage('❌ Erreur lors de la modification.');
+      console.error('Error updating question:', error);
+      if (error.response?.data?.message) {
+        setMessage(error.response.data.message);
+      } else {
+        setMessage('❌ Failed to update question.');
+      }
     }
   };
 
   return (
     <div style={containerStyle}>
-      <h2>Ajouter une question</h2>
+      <h2>Add a Question</h2>
       <form onSubmit={handleSubmit} style={formStyle}>
         <textarea
           rows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Écris ta question ici..."
+          placeholder="Write your question here..."
           style={textareaStyle}
           required
         />
-        <button type="submit" style={buttonStyle}>Ajouter</button>
+        <button type="submit" style={buttonStyle}>Add</button>
       </form>
 
-      <h2 style={{ marginTop: '40px' }}>Liste des questions</h2>
+      <h2 style={{ marginTop: '40px' }}>Questions List</h2>
       {message && <p style={messageStyle}>{message}</p>}
 
       <button
         onClick={deleteSelected}
         style={{ ...buttonStyle, marginBottom: '15px', backgroundColor: '#dc3545' }}
       >
-        Supprimer la sélection
+        Delete Selected
       </button>
 
       <ul style={listStyle}>
@@ -174,7 +182,7 @@ const QuestionForm = () => {
               checked={!!selected[id]}
               onChange={() => toggleSelect(id)}
               style={checkboxStyle}
-              aria-label={`Sélectionner la question ${id}`}
+              aria-label={`Select question ${id}`}
             />
 
             {editId === id ? (
@@ -185,18 +193,19 @@ const QuestionForm = () => {
                   onChange={(e) => setEditText(e.target.value)}
                   style={textareaEditStyle}
                 />
-                <button onClick={saveEdit} style={iconButtonBase}>💾</button>
-                <button onClick={cancelEditing} style={iconButtonBase}>✖️</button>
+                <button onClick={saveEdit} style={iconButtonBase} aria-label="Save">💾</button>
+                <button onClick={cancelEditing} style={iconButtonBase} aria-label="Cancel">✖️</button>
               </>
             ) : (
               <>
                 <span style={questionTextStyle}>{text}</span>
-                <button onClick={() => startEditing(id, text)} style={iconButtonBase}>✏️</button>
+                <button onClick={() => startEditing(id, text)} style={iconButtonBase} aria-label="Edit">✏️</button>
                 <button
                   onClick={() => {
-                    if (window.confirm('Supprimer cette question ?')) deleteQuestion(id);
+                    if (window.confirm('Delete this question?')) deleteQuestion(id);
                   }}
                   style={iconButtonBase}
+                  aria-label="Delete"
                 >
                   🗑️
                 </button>
@@ -209,7 +218,7 @@ const QuestionForm = () => {
   );
 };
 
-// 🎨 Styles CSS-in-JS
+// 🎨 Styles CSS-in-JS (inchangés)
 const containerStyle = {
   maxWidth: '600px',
   margin: '20px auto',

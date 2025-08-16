@@ -34,7 +34,7 @@ const EditableTextSection = ({ apiKey, title }) => {
     } catch (err) {
       console.error(err);
       setMessage(
-        `❌ Failed to load "${title}" text: ${err.response?.data?.message || err.message}`
+        ` Failed to load "${title}" text: ${err.response?.data?.message || err.message}`
       );
     }
   };
@@ -53,7 +53,7 @@ const EditableTextSection = ({ apiKey, title }) => {
 
   const handleSave = async () => {
     if (!editedText.trim()) {
-      setMessage('❌ Text cannot be empty.');
+      setMessage(' Text cannot be empty.');
       return;
     }
 
@@ -66,10 +66,10 @@ const EditableTextSection = ({ apiKey, title }) => {
       );
       setText(editedText);
       setEditMode(false);
-      setMessage(`✅ "${title}" text updated successfully.`);
+      setMessage(` "${title}" text updated successfully.`);
     } catch (err) {
       console.error(err);
-      setMessage(`❌ Failed to update: ${err.response?.data?.message || err.message}`);
+      setMessage(` Failed to update: ${err.response?.data?.message || err.message}`);
     } finally {
       setLoading(false);
     }
@@ -83,14 +83,14 @@ const EditableTextSection = ({ apiKey, title }) => {
         <p
           style={{
             ...messageStyle,
-            color: message.startsWith('✅') ? '#155724' : '#721c24',
-            backgroundColor: message.startsWith('✅') ? '#d4edda' : '#f8d7da',
-            borderColor: message.startsWith('✅') ? '#c3e6cb' : '#f5c6cb',
+            color: message.startsWith('') ? '#155724' : '#721c24',
+            backgroundColor: message.startsWith('') ? '#d4edda' : '#f8d7da',
+            borderColor: message.startsWith('') ? '#c3e6cb' : '#f5c6cb',
           }}
         >
-          {message.startsWith('✅') && <span style={{ marginRight: 6 }}>✅</span>}
-          {message.startsWith('❌') && <span style={{ marginRight: 6 }}>❌</span>}
-          {message.replace(/^✅|❌/, '').trim()}
+          {message.startsWith('') && <span style={{ marginRight: 6 }}></span>}
+          {message.startsWith('') && <span style={{ marginRight: 6 }}></span>}
+          {message.replace(/^|/, '').trim()}
         </p>
       )}
 
@@ -107,7 +107,7 @@ const EditableTextSection = ({ apiKey, title }) => {
               {loading ? 'Saving...' : '💾 Save'}
             </button>
             <button onClick={handleCancel} style={{ ...buttonStyle, backgroundColor: '#dc3545' }}>
-              ❌ Cancel
+               Cancel
             </button>
           </div>
         </>

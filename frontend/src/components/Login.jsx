@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 
-const Login = ({ setIsAuthenticated, setUserEmail }) => {
+const Login = ({ setIsAuthenticated }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState('');
-
+  const emailRef = useRef(null); // ref pour focus email
+  const navigate = useNavigate();
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -17,13 +18,20 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
 
     if (!email || !password) {
       setMessage('Please enter your email and password.');
+      setEmail('');
+      setPassword('');
+      if (emailRef.current) emailRef.current.focus();
       return;
     }
 
     if (!emailRegex.test(email)) {
       setMessage('Please enter a valid email address.');
+      setEmail('');
+      setPassword('');
+      if (emailRef.current) emailRef.current.focus();
       return;
     }
+
 
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/login_web`, {
@@ -36,23 +44,31 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
         const application = res.data.application || '';
         const expiryTime = Date.now() + 60 * 1000; // 1 minute pour test
 
-        // Stocker dans localStorage
         localStorage.setItem('isAuthenticated', 'true');
         localStorage.setItem('userEmail', email);
         localStorage.setItem('userRole', role);
         localStorage.setItem('userApplication', application);
         localStorage.setItem('authExpiry', expiryTime.toString());
 
-        // Passer à App.js
         setIsAuthenticated(true, email, role, application);
         setMessage('');
-        
 
+        navigate('/'); // redirection après succès
       } else {
-        setMessage('Incorrect email or password.');
+        setMessage(res.data.message || 'Unknown error.');
+        setEmail('');
+        setPassword('');
+        if (emailRef.current) emailRef.current.focus();
       }
     } catch (err) {
-      setMessage('Server or network error.');
+      if (err.response && err.response.data && err.response.data.message) {
+        setMessage(err.response.data.message);
+      } else {
+        setMessage('Server or network error.');
+      }
+      setEmail('');
+      setPassword('');
+      if (emailRef.current) emailRef.current.focus();
     }
   };
 
@@ -62,6 +78,7 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
       {message && <p style={messageStyle}>{message}</p>}
       <form onSubmit={handleSubmit} style={formStyle}>
         <input
+          ref={emailRef}
           type="text"
           placeholder="Email"
           value={email}
@@ -90,7 +107,6 @@ const Login = ({ setIsAuthenticated, setUserEmail }) => {
       <p>
         <Link to="/forgot-password" style={{ fontSize: '14px' }}>Forgot password?</Link>
       </p>
-
       <p>
         Don't have an account? <Link to="/signup">Sign up</Link>
       </p>
