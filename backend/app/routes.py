@@ -2564,7 +2564,7 @@ def register_user():
         cursor = conn.cursor(dictionary=True)
 
         # 🔍 Vérifier si l'email existe déjà
-        cursor.execute("SELECT id FROM registred_users WHERE email = %s", (email,))
+        cursor.execute("SELECT id FROM registred_users WHERE email = %s and application = %s", (email, application))
         if cursor.fetchone():
             return jsonify({'success': False, 'message': ' This email is already registered.'}), 400
 
@@ -2741,14 +2741,23 @@ def delete_user_web(user_id):
             conn.close()
 
 
-@bp.route('/get_users', methods=['POST'])
+@bp.route('/get_users', methods=['GET'])
 def get_users():
+    application = request.args.get('application')
+    print(application)
+
+    if not application:
+        return jsonify({'success': False, 'message': 'Application parameter is required.'}), 400
+
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, email, username, application, role FROM registred_users")
+        cursor.execute(
+            "SELECT id, email, username, role FROM registred_users WHERE application = %s",
+            (application,)
+        )
         users = cursor.fetchall()
 
         return jsonify({'success': True, 'users': users}), 200
@@ -2762,6 +2771,7 @@ def get_users():
             cursor.close()
         if conn:
             conn.close()
+
 
 
 @bp.route('/delete_user', methods=['POST'])

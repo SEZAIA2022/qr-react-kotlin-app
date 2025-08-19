@@ -23,7 +23,13 @@ const UserRegister = () => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/get_users`);
+        if (!application) return;
+        console.log(application);
+        const response = await axios.get(
+          `${process.env.REACT_APP_API_URL}/api/get_users`,
+          { params: { application } }   
+        );
+
         if (response.data.success) {
           setUsers(response.data.users);
         } else {
@@ -34,7 +40,8 @@ const UserRegister = () => {
       }
     };
     fetchUsers();
-  }, [refreshUsers]);
+  }, [refreshUsers, application]); 
+
 
   const handleSubmit = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
