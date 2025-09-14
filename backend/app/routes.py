@@ -11,6 +11,7 @@ from mysql.connector.errors import IntegrityError
 import firebase_admin
 from firebase_admin import messaging, credentials
 
+
 from flask import Blueprint, request, jsonify, current_app
 from .utils import (
     format_number_simple,
@@ -188,7 +189,14 @@ def logout():
 
 
 
-cred = credentials.Certificate('monprojetandroidkey.json')
+#cred = credentials.Certificate('monprojetandroidkey.json')
+firebase_creds_path = os.getenv("FIREBASE_CREDENTIALS")
+if not firebase_creds_path or not os.path.isfile(firebase_creds_path):
+    raise FileNotFoundError(f"Firebase credentials not found at {firebase_creds_path}")
+cred = credentials.Certificate(firebase_creds_path)
+
+
+
 firebase_admin.initialize_app(cred)
 
 
