@@ -1,4 +1,5 @@
 import bcrypt
+from flask import current_app, url_for
 import mysql
 import qrcode
 import uuid
@@ -242,7 +243,7 @@ def format_number_simple(number, country_or_prefix):
 #     return bcrypt.checkpw(qr_code_plain.encode('utf-8'), hashed_qr_code.encode('utf-8'))
 
 import re
-
+from werkzeug.utils import secure_filename
 def validate_email_format(email: str) -> tuple[str, list]:
     email_clean = email.strip()
     email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
@@ -271,3 +272,49 @@ def send_fcm_notification(token, title, body):
     }
     response = requests.post(url, headers=headers, json=payload)
     return response.json()
+
+
+
+ALLOWED_VIDEO_EXTENSIONS = {"mp4", "webm", "ogg", "mov", "m4v"} 
+def get_upload_video_folder():
+    # /.../app/static/video_exp
+    folder = os.path.join(current_app.root_path, "static", "video_exp")
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+def allowed_video(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
+
+def save_video_file(file_storage):
+    """
+    Sauvegarde la vidéo dans static/video_exp avec un nom unique.
+    Retourne (filename) stocké en DB.
+    """
+    if not file_storage or file_storage.filename == "":
+        return None
+    if not allowed_video(file_storage.filename):
+        raise ValueError("Extension vidéo non autorisée (mp4, webm, ogg, mov, m4v).")
+    upload_dir = get_upload_video_folder()
+    ext = file_storage.filename.rsplit(".", 1)[1].lower()
+    unique_name = f"{uuid.uuid4().hex}.{ext}"
+    safe_name = secure_filename(unique_name)
+    file_path = os.path.join(upload_dir, safe_name)
+    file_storage.save(file_path)
+    return safe_name
+
+def delete_video_file(filename: str):
+    if not filename:
+        return
+    file_path = os.path.join(get_upload_video_folder(), filename)
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        # on ignore les erreurs de suppression disque
+        pass
+
+def video_url_from_filename(filename: str):
+    if not filename:
+        return None
+    # /static/video_exp/<filename>
+    return url_for("static", filename=f"video_exp/{filename}", _external=False)
