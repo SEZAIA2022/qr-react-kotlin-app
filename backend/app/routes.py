@@ -14,7 +14,6 @@ from firebase_admin import messaging, credentials
 
 from flask import Blueprint, request, jsonify, current_app
 from .utils import (
-    delete_video_file,
     format_number_simple,
     generate_qr_code,
     register_otp_storage,
@@ -23,14 +22,12 @@ from .utils import (
     hash_password,
     is_email_taken,
     reset_auto_increment,
-    save_video_file,
     send_fcm_notification,
     send_otp_sms,
     validate_email_format,
     verify_password,
     is_valid_password,
     send_otp_email,
-    video_url_from_filename,
 )
 from .database import get_db_connection
 
@@ -2103,68 +2100,68 @@ def get_help_tasks():
     return jsonify({"tasks": tasks})
 
 # ✏️ PUT : modifier une tâche help par id
-# @bp.route('/help_tasks/<int:task_id>', methods=['PUT'])
-# def update_help_task(task_id):
-#     data = request.get_json()
-#     new_title = data.get('title_help', '').strip()
-#     new_content = data.get('help', '').strip()
+@bp.route('/help_tasks/<int:task_id>', methods=['PUT'])
+def update_help_task(task_id):
+    data = request.get_json()
+    new_title = data.get('title_help', '').strip()
+    new_content = data.get('help', '').strip()
 
-#     if not new_title or not new_content:
-#         return jsonify({"error": "Both title_help and help fields are required"}), 400
+    if not new_title or not new_content:
+        return jsonify({"error": "Both title_help and help fields are required"}), 400
 
-#     conn = get_db_connection()
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT id FROM help_tasks WHERE id = %s", (task_id,))
-#     existing = cursor.fetchone()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM help_tasks WHERE id = %s", (task_id,))
+    existing = cursor.fetchone()
 
-#     if not existing:
-#         cursor.close()
-#         conn.close()
-#         return jsonify({"error": "Help task not found"}), 404
+    if not existing:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Help task not found"}), 404
 
-#     cursor.execute(
-#         "UPDATE help_tasks SET title_help = %s, help = %s WHERE id = %s",
-#         (new_title, new_content, task_id)
-#     )
-#     conn.commit()
-#     cursor.close()
-#     conn.close()
+    cursor.execute(
+        "UPDATE help_tasks SET title_help = %s, help = %s WHERE id = %s",
+        (new_title, new_content, task_id)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
 
-#     return jsonify({
-#         "message": " Help task updated successfully.",
-#         "task": {"id": task_id, "title_help": new_title, "help": new_content}
-#     })
+    return jsonify({
+        "message": " Help task updated successfully.",
+        "task": {"id": task_id, "title_help": new_title, "help": new_content}
+    })
 
-# # ➕ POST add new help task
-# @bp.route('/help_tasks', methods=['POST'])
-# def add_help_task():
-#     data = request.get_json()
-#     title_help = data.get('title_help', '').strip()
-#     help_text = data.get('help', '').strip()
-#     application = data.get('application', '')
-#     if not title_help or not help_text:
-#         return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
+# ➕ POST add new help task
+@bp.route('/help_tasks', methods=['POST'])
+def add_help_task():
+    data = request.get_json()
+    title_help = data.get('title_help', '').strip()
+    help_text = data.get('help', '').strip()
+    application = data.get('application', '')
+    if not title_help or not help_text:
+        return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
 
-#     conn = get_db_connection()
-#     cursor = conn.cursor()
-#     cursor.execute(
-#         "INSERT INTO help_tasks (title_help, help, application) VALUES (%s, %s, %s)",
-#         (title_help, help_text, application)
-#     )
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO help_tasks (title_help, help, application) VALUES (%s, %s, %s)",
+        (title_help, help_text, application)
+    )
 
-#     conn.commit()
-#     new_id = cursor.lastrowid
-#     cursor.close()
-#     conn.close()
+    conn.commit()
+    new_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
 
-#     return jsonify({
-#         "message": " Tâche ajoutée avec succès.",
-#         "task": {
-#             "id": new_id,
-#             "title_help": title_help,
-#             "help": help_text
-#         }
-#     }), 201
+    return jsonify({
+        "message": " Tâche ajoutée avec succès.",
+        "task": {
+            "id": new_id,
+            "title_help": title_help,
+            "help": help_text
+        }
+    }), 201
 
 # 🗑 DELETE help task by id
 @bp.route('/help_tasks/<int:task_id>', methods=['DELETE'])
@@ -2903,188 +2900,3 @@ def delete_user():
 #     except Exception as e:
 #         print("Erreur:", str(e))
 #         return jsonify({"error": str(e)}), 500
-
-
-
-
-
-
-
-
-@bp.route('/help_tasks', methods=['POST'])
-def add_help_task():
-    # Support JSON ou multipart
-    if request.content_type and "multipart/form-data" in request.content_type:
-        form = request.form
-        files = request.files
-        title_help = (form.get('title_help') or '').strip()
-        help_text  = (form.get('help') or '').strip()
-        application = (form.get('application') or '').strip()
-        video_file = files.get('video')
-    else:
-        if not request.is_json:
-            return jsonify({"error": "Requête JSON ou multipart attendue"}), 400
-        data = request.get_json(silent=True) or {}
-        title_help = (data.get('title_help') or '').strip()
-        help_text  = (data.get('help') or '').strip()
-        application = (data.get('application') or '').strip()
-        video_file = None
-
-    if not title_help or not help_text:
-        return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
-    if not application:
-        return jsonify({"error": "Le champ application est obligatoire"}), 400
-
-    conn = None
-    cur = None
-    try:
-        video_filename = None
-        if video_file:
-            video_filename = save_video_file(video_file)
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # PostgreSQL: RETURNING id ; MySQL: utiliser lastrowid
-        try:
-            cur.execute(
-                """
-                INSERT INTO help_tasks (title_help, help, application, video_filename)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-                """,
-                (title_help, help_text, application, video_filename)
-            )
-            new_id = cur.fetchone()[0]
-        except Exception:
-            # si tu es en MySQL, dé-commente plutôt ceci et enlève RETURNING ci-dessus :
-            # cur.execute(
-            #     "INSERT INTO help_tasks (title_help, help, application, video_filename) VALUES (%s, %s, %s, %s)",
-            #     (title_help, help_text, application, video_filename)
-            # )
-            # new_id = cur.lastrowid
-            raise
-
-        conn.commit()
-        task = {
-            "id": new_id,
-            "title_help": title_help,
-            "help": help_text,
-            "application": application,
-            "video_filename": video_filename,
-            "video_url": video_url_from_filename(video_filename),
-        }
-        return jsonify({"message": "Tâche ajoutée avec succès.", "task": task}), 201
-
-    except ValueError as ve:
-        if conn: conn.rollback()
-        return jsonify({"error": str(ve)}), 400
-    except Exception as e:
-        if conn: conn.rollback()
-        return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
-    finally:
-        if cur: cur.close()
-        if conn: conn.close()
-
-@bp.route('/help_tasks/<int:task_id>', methods=['PUT'])
-def update_help_task(task_id):
-    is_multipart = bool(request.content_type and "multipart/form-data" in request.content_type)
-
-    if is_multipart:
-        form = request.form
-        files = request.files
-        new_title = (form.get('title_help') or '').strip()
-        new_content = (form.get('help') or '').strip()
-        delete_video_flag = (form.get('delete_video') or '').lower() == 'true'
-        new_video_file = files.get('video')
-    else:
-        if not request.is_json:
-            return jsonify({"error": "Requête JSON ou multipart attendue"}), 400
-        data = request.get_json(silent=True) or {}
-        new_title = (data.get('title_help') or '').strip()
-        new_content = (data.get('help') or '').strip()
-        delete_video_flag = (str(data.get('delete_video')) or '').lower() == 'true'
-        new_video_file = None  # pas d'upload en JSON
-
-    if not new_title or not new_content:
-        return jsonify({"error": "Les champs title_help et help sont obligatoires"}), 400
-
-    conn = None
-    cur = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("SELECT id, application, video_filename FROM help_tasks WHERE id = %s", (task_id,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "Tâche introuvable"}), 404
-
-        _, application, old_video_filename = row
-        new_video_filename = old_video_filename
-
-        # gestion vidéo (supprimer / remplacer)
-        if delete_video_flag and old_video_filename:
-            delete_video_file(old_video_filename)
-            new_video_filename = None
-
-        if new_video_file:
-            # si on remplace, supprimer l'ancienne d'abord
-            if old_video_filename:
-                delete_video_file(old_video_filename)
-            new_video_filename = save_video_file(new_video_file)
-
-        cur.execute(
-            "UPDATE help_tasks SET title_help = %s, help = %s, video_filename = %s WHERE id = %s",
-            (new_title, new_content, new_video_filename, task_id)
-        )
-        conn.commit()
-
-        task = {
-            "id": task_id,
-            "title_help": new_title,
-            "help": new_content,
-            "application": application,
-            "video_filename": new_video_filename,
-            "video_url": video_url_from_filename(new_video_filename),
-        }
-        return jsonify({"message": "Tâche mise à jour avec succès.", "task": task}), 200
-
-    except ValueError as ve:
-        if conn: conn.rollback()
-        return jsonify({"error": str(ve)}), 400
-    except Exception as e:
-        if conn: conn.rollback()
-        return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
-    finally:
-        if cur: cur.close()
-        if conn: conn.close()
-
-@bp.route('/help_tasks/<int:task_id>', methods=['DELETE'])
-def delete_help_task(task_id):
-    conn = None
-    cur = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("SELECT video_filename FROM help_tasks WHERE id = %s", (task_id,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "Tâche introuvable"}), 404
-        video_filename = row[0]
-
-        cur.execute("DELETE FROM help_tasks WHERE id = %s", (task_id,))
-        conn.commit()
-
-        # supprimer le fichier vidéo si existant
-        if video_filename:
-            delete_video_file(video_filename)
-
-        return jsonify({"message": "Tâche supprimée."}), 200
-
-    except Exception as e:
-        if conn: conn.rollback()
-        return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
-    finally:
-        if cur: cur.close()
-        if conn: conn.close()
