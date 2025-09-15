@@ -159,52 +159,57 @@ const UserRegister = () => {
       </form>
 
       <h2 style={{ margin: '40px 0 20px' }}>Users List</h2>
-
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Email</th>
-            <th style={thStyle}>Username</th>
-            <th style={thStyle}>Application</th>
-            <th style={thStyle}>Role</th>
-            <th style={thStyle}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.length === 0 ? (
+      <div style={responsiveWrapperStyle}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <td colSpan="5" style={{ textAlign: 'center', padding: '15px' }}>
-                No users found.
-              </td>
+              <th style={thStyle}>Email</th>
+              <th style={thStyle}>Username</th>
+              <th style={thStyle}>Application</th>
+              <th style={thStyle}>Role</th>
+              <th style={thStyle}>Actions</th>
             </tr>
-          ) : (
-            users.map(user => (
-              <tr key={user.id}>
-                <td style={tdStyle}>{user.email}</td>
-                <td style={tdStyle}>{user.username}</td>
-                <td style={tdStyle}>{user.application}</td>
-                <td style={tdStyle}>{user.role}</td>
-                <td style={tdStyle}>
-                  <button
-                    onClick={() => handleDelete(user.id)}
-                    style={deleteButtonStyle}
-                    title="Delete user"
-                  >
-                    Delete
-                  </button>
+          </thead>
+          <tbody>
+            {users.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={{ textAlign: 'center', padding: '15px' }}>
+                  No users found.
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-
+            ) : (
+              users.map(user => (
+                <tr key={user.id}>
+                  <td style={tdStyle}>{user.email}</td>
+                  <td style={tdStyle}>{user.username}</td>
+                  <td style={tdStyle}>{user.application}</td>
+                  <td style={tdStyle}>{user.role}</td>
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => handleDelete(user.id)}
+                      style={deleteButtonStyle}
+                      title="Delete user"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar />
     </div>
   );
 };
 
 // Styles
+
+const responsiveWrapperStyle = {
+  width: '100%',
+  overflowX: 'auto',
+};
 
 const containerStyle = {
   maxWidth: '800px',
