@@ -49,49 +49,55 @@ const AdminDashboard = ({ userEmail }) => {
       ) : error ? (
         <p style={{ color: 'red' }}>{error}</p>
       ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>ID</th>
-              <th style={thStyle}>Application</th>
-              <th style={thStyle}>Email</th>
-              <th style={thStyle}>City</th>
-              <th style={thStyle}>Country</th>
-              <th style={thStyle}>Status</th>
-              <th style={thStyle}>Role</th>
-              <th style={thStyle}>QR Code Count</th>
-              <th style={thStyle}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user, index) => (
-              <tr key={user.id}>
-                <td style={tdStyle}>{index + 1}</td> 
-                <td style={tdStyle}>{user.application}</td>
-                <td style={tdStyle}>{user.email}</td>
-                <td style={tdStyle}>{user.city || '-'}</td>
-                <td style={tdStyle}>{user.country || '-'}</td>
-                <td style={tdStyle}> {user.is_activated === 1 ? 'Activated' : 'Not activated' || '-'}</td>
-                <td style={tdStyle}>{user.role}</td>
-                <td style={tdStyle}>{user.qrcode_count}</td>
-                <td style={tdStyle}>
-                  <button 
-                    style={deleteBtnStyle} 
-                    onClick={() => handleDelete(user.id)}
-                  >
-                    Delete
-                  </button>
-                </td>
+        <div style={responsiveWrapperStyle}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>ID</th>
+                <th style={thStyle}>Application</th>
+                <th style={thStyle}>Email</th>
+                <th style={thStyle}>City</th>
+                <th style={thStyle}>Country</th>
+                <th style={thStyle}>Status</th>
+                <th style={thStyle}>Role</th>
+                <th style={thStyle}>QR Code Count</th>
+                <th style={thStyle}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map((user, index) => (
+                <tr key={user.id}>
+                  <td style={tdStyle}>{index + 1}</td> 
+                  <td style={tdStyle}>{user.application}</td>
+                  <td style={tdStyle}>{user.email}</td>
+                  <td style={tdStyle}>{user.city || '-'}</td>
+                  <td style={tdStyle}>{user.country || '-'}</td>
+                  <td style={tdStyle}> {user.is_activated === 1 ? 'Activated' : 'Not activated' || '-'}</td>
+                  <td style={tdStyle}>{user.role}</td>
+                  <td style={tdStyle}>{user.qrcode_count}</td>
+                  <td style={tdStyle}>
+                    <button 
+                      style={deleteBtnStyle} 
+                      onClick={() => handleDelete(user.id)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 };
 
 // Styles
+const responsiveWrapperStyle = {
+  width: '100%',
+  overflowX: 'auto',
+};
 const containerStyle = {
   maxWidth: '900px',
   margin: '40px auto',

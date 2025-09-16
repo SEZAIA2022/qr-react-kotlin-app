@@ -5,6 +5,9 @@ import uuid
 import os
 import smtplib
 import re
+import logging
+from flask import current_app
+from email.message import EmailMessage
 import phonenumbers
 from phonenumbers import  PhoneNumberFormat, region_code_for_country_code
 import requests
@@ -32,21 +35,48 @@ def is_valid_password(password: str) -> bool:
         return False
     return True
 
-import logging
 
-def send_otp_email(to_email: str, otp: str, sender_email: str, sender_password: str):
+def send_otp_email(
+    to_email: str,
+    otp: str,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int = 465,
+    use_ssl: bool = True,
+):
+    msg = EmailMessage()
+    msg["Subject"] = "Votre code OTP"
+    msg["From"] = sender_email
+    msg["To"] = to_email
+    msg.set_content(
+        f"Bonjour,\n\nVotre code OTP est : {otp}\nIl expire dans 5 minutes.\n\n— Assist-by-Scan"
+    )
+
+    current_app.logger.info(
+        f"[MAIL] host={smtp_host} port={smtp_port} ssl={use_ssl} user={sender_email}"
+    )
+
     try:
-        message = f"Subject: Votre code OTP\n\nVotre code OTP est : {otp}"
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, [to_email], message)  # <--- FIX HERE
-        print(f"[INFO] OTP email sent to {to_email}")
-    except Exception as e:
+        if use_ssl:
+            # Port 465 (SSL direct)
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            # Port 587 (STARTTLS)
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        current_app.logger.info(f"[MAIL] OTP email sent to {to_email}")
+    except Exception:
         import traceback
-        print("[ERROR] Failed to send OTP email.")
-        print(traceback.format_exc())
+        current_app.logger.error("[MAIL] Failed to send OTP email:\n" + traceback.format_exc())
         raise
+
 
 import vonage
 

@@ -2435,43 +2435,71 @@ def resend_otp_web():
 
 @bp.route('/forgot_password_web', methods=['POST'])
 def forgot_password_web():
-    data = request.get_json()
+    data = request.get_json(silent=True)
     if not data:
         return jsonify({'status': 'error', 'message': "No data received."}), 400
 
-    email = data.get('email')  
+    email = data.get('email')
     if not email:
         return jsonify({'status': 'error', 'message': "Email is required."}), 400
-    conn = get_db_connection()
-    cursor = conn.cursor()
 
-    insert_query = """
-        select email from users_web WHERE email = %s AND  is_activated = %s
-    """
-    cursor.execute(insert_query, (email, True))
-    user = cursor.fetchone()
-    conn.commit()
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # True → 1 (MySQL bool)
+        cursor.execute(
+            "SELECT email FROM users_web WHERE email = %s AND is_activated = %s",
+            (email, True)
+        )
+        user = cursor.fetchone()
+    except Exception as db_err:
+        current_app.logger.exception(f"[DB] Error during SELECT: {db_err}")
+        return jsonify({'status': 'error', 'message': "Database error."}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
     if not user:
-        return jsonify({'status': 'error', 'message': "User not found."}), 404
+        # On ne révèle pas si l’email existe ou non (sécurité), mais si tu veux garder:
+        return jsonify({'status': 'error', 'message': "User not found or not activated."}), 404
 
     otp = str(random.randint(1000, 9999))
     expires_at = datetime.utcnow() + timedelta(minutes=5)
-
-    # Stocker OTP avec la clé correspondant au contact utilisé (email ou téléphone)
-    otp_storage[email] = {'otp': otp, 'expires_at': expires_at, 'attempts': 0, 'email' : email}
+    otp_storage[email] = {'otp': otp, 'expires_at': expires_at, 'attempts': 0, 'email': email}
 
     try:
         send_otp_email(
-            email,
-            otp,
-            current_app.config['EMAIL_SENDER'],
-            current_app.config['EMAIL_PASSWORD']
+            to_email=email,
+            otp=otp,
+            sender_email=current_app.config["EMAIL_SENDER"],
+            sender_password=current_app.config["EMAIL_PASSWORD"],
+            smtp_host=current_app.config["SMTP_HOST"],
+            smtp_port=current_app.config["SMTP_PORT"],
+            use_ssl=current_app.config["SMTP_USE_SSL"],
         )
-        message = "OTP sent to your email."
-       
-        return jsonify({'status': 'success', 'message': message})
+        return jsonify({'status': 'success', 'message': "OTP sent to your email."})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
+
+
+
+
+
+@bp.route("/debug-env")
+def debug_env():
+    from flask import current_app
+    return {
+        "SMTP_HOST": current_app.config.get("SMTP_HOST"),
+        "SMTP_PORT": current_app.config.get("SMTP_PORT"),
+        "SMTP_USE_SSL": current_app.config.get("SMTP_USE_SSL"),
+        "EMAIL_SENDER": current_app.config.get("EMAIL_SENDER"),
+        "EMAIL_PASSWORD_len": len(current_app.config.get("EMAIL_PASSWORD") or "")
+    }
+
 
 
 

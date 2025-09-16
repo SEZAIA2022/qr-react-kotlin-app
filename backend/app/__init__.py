@@ -5,7 +5,7 @@ from flask_cors import CORS
 from .config import Config
 
 # Charger le fichier .env AVANT d'importer routes
-load_dotenv()
+load_dotenv("/opt/myapp/qr-react-kotlin-app/backend/.env")
 
 from .routes import bp   # <-- cet import doit venir APRÈS load_dotenv()
 
