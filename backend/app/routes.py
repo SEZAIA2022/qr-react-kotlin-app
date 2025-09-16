@@ -2425,7 +2425,7 @@ def resend_otp_web():
         print(f"[DEBUG] OTP updated in otp_storage for {email}: {otp_storage[email]}")
 
     try:
-        send_otp_email(email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
+        send_otp_email(email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'], current_app.config['EMAIL_PASSWORD'])
         print(f"[INFO] New OTP sent to {email}: {new_otp}")
         return jsonify({'status': 'success', 'message': "New OTP sent to your email."}), 200
     except Exception as e:
@@ -2484,24 +2484,6 @@ def forgot_password_web():
         return jsonify({'status': 'success', 'message': "OTP sent to your email."})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
-
-
-
-
-
-@bp.route("/debug-env")
-def debug_env():
-    from flask import current_app
-    return {
-        "SMTP_HOST": current_app.config.get("SMTP_HOST"),
-        "SMTP_PORT": current_app.config.get("SMTP_PORT"),
-        "SMTP_USE_SSL": current_app.config.get("SMTP_USE_SSL"),
-        "EMAIL_SENDER": current_app.config.get("EMAIL_SENDER"),
-        "EMAIL_PASSWORD_len": len(current_app.config.get("EMAIL_PASSWORD") or "")
-    }
-
-
-
 
 
 
@@ -2570,6 +2552,23 @@ def change_password_web_forget():
     finally:
         cursor.close()
         conn.close()
+
+
+
+
+
+
+@bp.route("/debug-env")
+def debug_env():
+    from flask import current_app
+    return {
+        "SMTP_HOST": current_app.config.get("SMTP_HOST"),
+        "SMTP_PORT": current_app.config.get("SMTP_PORT"),
+        "SMTP_USE_SSL": current_app.config.get("SMTP_USE_SSL"),
+        "EMAIL_SENDER": current_app.config.get("EMAIL_SENDER"),
+        "EMAIL_PASSWORD_len": len(current_app.config.get("EMAIL_PASSWORD") or "")
+    }
+
 
 
 
