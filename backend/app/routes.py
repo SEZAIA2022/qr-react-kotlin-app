@@ -2425,7 +2425,7 @@ def resend_otp_web():
         print(f"[DEBUG] OTP updated in otp_storage for {email}: {otp_storage[email]}")
 
     try:
-        send_otp_email(email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'], current_app.config['EMAIL_PASSWORD'])
+        send_otp_email(email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'], current_app.config['EMAIL_PASSWORD'], current_app.config['SMTP_HOST'])
         print(f"[INFO] New OTP sent to {email}: {new_otp}")
         return jsonify({'status': 'success', 'message': "New OTP sent to your email."}), 200
     except Exception as e:
