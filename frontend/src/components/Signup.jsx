@@ -7,7 +7,6 @@ const Signup = () => {
   const [email, setEmail] = useState('');
   const [city, setCity] = useState('');
   const [country, setCountry] = useState('');
-  const [application, setApplication] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +32,7 @@ const Signup = () => {
 
     if (!city) errs.city = 'City is required.';
     if (!country) errs.country = 'Country is required.';
-    if (!application) errs.application = 'Application is required.';
+
 
     if (!password) errs.password = 'Password is required.';
     else if (!strongPwd.test(password)) {
@@ -58,7 +57,6 @@ const Signup = () => {
         email,
         city,
         country,
-        application,
         password,
         confirm_password: confirmPassword,
       });
@@ -131,17 +129,6 @@ const Signup = () => {
           required
         />
         {fieldErrors.country && <p style={errorText}>{fieldErrors.country}</p>}
-
-        <input
-          type="text"
-          placeholder="Application"
-          value={application}
-          onChange={(e) => setApplication(e.target.value)}
-          style={inputStyle}
-          aria-invalid={!!fieldErrors.application}
-          required
-        />
-        {fieldErrors.application && <p style={errorText}>{fieldErrors.application}</p>}
 
         <div style={{ position: 'relative' }}>
           <input

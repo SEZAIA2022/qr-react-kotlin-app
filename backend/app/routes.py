@@ -2450,7 +2450,7 @@ def password_reset():
 @bp.post("/signup")
 def signup():
     data = request.get_json(force=True, silent=True) or {}
-    required = ["email", "city", "country", "application", "password", "confirm_password"]
+    required = ["email", "city", "country", "password", "confirm_password"]
     errors = []
 
     # validations
@@ -2476,17 +2476,17 @@ def signup():
     try:
         cnx = get_db_connection()
         cur = cnx.cursor()
-        cur.execute("SELECT is_activated,role FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+        cur.execute("SELECT is_activated, role, application FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
         row = cur.fetchone()
         if row and row[0] == True:
             return jsonify({'status':'error','message':"Email already registered."}), 400
         role = row[1] if row else None
+        application = row[2] if row else None
     finally:
         if cur: cur.close()
         if cnx: cnx.close()
 
     # Prépare la demande
-    role = role 
     pwd_hash = hash_password(password)
     if isinstance(pwd_hash, bytes):
         pwd_hash = pwd_hash.decode("utf-8")
@@ -2496,7 +2496,7 @@ def signup():
         "password_hash": pwd_hash,
         "city": data["city"],
         "country": data["country"],
-        "application": data["application"],
+        "application": application,
         "role": role
     }
 
