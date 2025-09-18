@@ -7,15 +7,36 @@ import smtplib
 import re
 import logging
 from flask import current_app
-from email.message import EmailMessage
 import phonenumbers
 from phonenumbers import  PhoneNumberFormat, region_code_for_country_code
 import requests
-from .database import get_db_connection
-
+import traceback
+import secrets, hashlib, hmac
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+from email.utils import formataddr, make_msgid
+import traceback
 # Stockage OTP temporaire
 otp_storage = {}
 register_otp_storage = {}
+
+def limit_by_email():
+    from flask import request
+    email = (request.json.get("email") or "").strip().lower() if request.is_json else None
+    return email or get_remote_address()  # fallback IP si email absent
+
+def gen_reset_token_opaque(nbytes=32) -> str:
+    # jeton URL-safe
+    return secrets.token_urlsafe(nbytes)
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+def timing_equal(a: str, b: str) -> bool:
+    return hmac.compare_digest(a, b)
+
+
+
 
 def hash_password(password: str) -> bytes:
     salt = bcrypt.gensalt()
@@ -77,6 +98,88 @@ def send_otp_email(
         current_app.logger.error("[MAIL] Failed to send OTP email:\n" + traceback.format_exc())
         raise
 
+# utils.py
+
+# utils.py
+
+
+MAIL_DEBUG_FILE = "/tmp/mail_debug.log"  # <-- dossier accessible
+
+def _append_mail_debug(txt: str):
+    try:
+        with open(MAIL_DEBUG_FILE, "a") as f:
+            f.write(txt + "\n")
+    except Exception:
+        pass
+
+def send_reset_email_link(
+    to_email: str,
+    reset_url: str,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int = 465,
+    use_ssl: bool = True,
+):
+    msg = EmailMessage()
+    msg["Subject"] = "Réinitialisation de votre mot de passe"
+    msg["From"] = formataddr(("Assist-by-Scan", sender_email))
+    msg["To"] = to_email
+    msg["Reply-To"] = sender_email
+    msg["Message-ID"] = make_msgid(domain="assistbyscan.com")
+
+    text_body = (
+        "Bonjour,\n\n"
+        f"Pour réinitialiser votre mot de passe, cliquez sur ce lien : {reset_url}\n\n"
+        "Ce lien expirera dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
+        "— Assist-by-Scan"
+    )
+    msg.set_content(text_body)
+
+    html_body = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:Arial,Helvetica,sans-serif; color:#222">
+    <p>Bonjour,</p>
+    <p>Vous avez demandé à réinitialiser votre mot de passe.</p>
+    <p>
+      <a href="{reset_url}"
+         style="display:inline-block;background:#0d6efd;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">
+        Réinitialiser mon mot de passe
+      </a>
+    </p>
+    <p style="font-size:14px;color:#555">Ou copiez ce lien dans votre navigateur :<br>
+      <span style="word-break:break-all">{reset_url}</span>
+    </p>
+    <p style="font-size:13px;color:#777">
+      Ce lien expirera dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+    </p>
+    <p>— Assist-by-Scan</p>
+  </body>
+</html>
+"""
+    msg.add_alternative(html_body, subtype="html")
+
+    _append_mail_debug(f"TRY SEND to={to_email} host={smtp_host} port={smtp_port} ssl={use_ssl} from={sender_email}")
+
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, int(smtp_port)) as server:
+                server.set_debuglevel(1)
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
+                server.set_debuglevel(1)
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        _append_mail_debug("OK SENT")
+    except Exception:
+        _append_mail_debug("FAIL:\n" + traceback.format_exc())
+        raise
 
 import vonage
 

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from mysql.connector.errors import IntegrityError  
 import firebase_admin
 from firebase_admin import messaging, credentials
-
+from email.message import EmailMessage
 
 from flask import Blueprint, request, jsonify, current_app
 from .utils import (
@@ -28,10 +28,41 @@ from .utils import (
     verify_password,
     is_valid_password,
     send_otp_email,
+    gen_reset_token_opaque,
+    hash_token,
+    timing_equal,
+    send_reset_email_link,
+    limit_by_email
 )
 from .database import get_db_connection
 
 bp = Blueprint('main', __name__, url_prefix="/api")
+
+
+@bp.post("/test_send_reset")
+def test_send_reset():
+    data = request.get_json(force=True, silent=True) or {}
+    to_email = (data.get("to_email") or "").strip()
+    reset_url = data.get("reset_url", "https://assistbyscan.com/reset?token=TEST123")
+
+    if not to_email:
+        return jsonify({"status": "error", "error": "to_email manquant"}), 400
+
+    use_ssl = str(current_app.config.get("SMTP_USE_SSL", "true")).lower() in ("1","true","yes")
+
+    try:
+        send_reset_email_link(
+            to_email=to_email,
+            reset_url=reset_url,
+            sender_email=current_app.config["EMAIL_SENDER"],
+            sender_password=current_app.config["EMAIL_PASSWORD"],
+            smtp_host=current_app.config["SMTP_HOST"],
+            smtp_port=int(current_app.config["SMTP_PORT"]),
+            use_ssl=use_ssl,
+        )
+        return jsonify({"status": "ok", "message": f"Email envoyé à {to_email}"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 
 @bp.route('/login', methods=['POST'])
@@ -2394,164 +2425,166 @@ def verify_otp():
 
 
 
-@bp.route('/resend_otp_web', methods=['POST'])
-def resend_otp_web():
-    data = request.get_json()
-    email = data.get('email')
-    previous_page = data.get('previous_page')
-
+@bp.post("/password/forgot")
+def password_forgot():
+    data = request.get_json(force=True, silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
     if not email:
-        return jsonify({'status': 'error', 'message': "Email is required."}), 400
+        return jsonify({"message":"If the account exists, a reset email has been sent."}), 200
 
-    new_otp = str(random.randint(1000, 9999))
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    # Rate limit (pseudo) : à faire via Flask-Limiter
+    # limiter.limit("5/hour")(password_forgot)
 
-    if previous_page == "signup":
-        record = register_otp_storage.get(email)
-        if not record:
-            return jsonify({'status': 'error', 'message': "User not found in registration storage."}), 404
-        record['otp'] = new_otp
-        record['expires_at'] = expires_at
-        record['attempts'] = 0
-        print(f"[DEBUG] OTP updated in register_otp_storage for {email}: {register_otp_storage[email]}")
-    else:
-        old_record = otp_storage.get(email, {})
-        otp_storage[email] = {
-            'otp': new_otp,
-            'expires_at': expires_at,
-            'attempts': 0,
-            'new_email': old_record.get('new_email')
-        }
-        print(f"[DEBUG] OTP updated in otp_storage for {email}: {otp_storage[email]}")
-
+    # Cherche l’utilisateur (facultatif, mais utile pour TTL/log) :
+    exists = False
     try:
-        send_otp_email(email, new_otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'], current_app.config['SMTP_HOST'])
-        print(f"[INFO] New OTP sent to {email}: {new_otp}")
-        return jsonify({'status': 'success', 'message': "New OTP sent to your email."}), 200
-    except Exception as e:
-        print("Error sending OTP:", str(e))
-        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
-
-
-@bp.route('/forgot_password_web', methods=['POST'])
-def forgot_password_web():
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({'status': 'error', 'message': "No data received."}), 400
-
-    email = data.get('email')
-    if not email:
-        return jsonify({'status': 'error', 'message': "Email is required."}), 400
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        # True → 1 (MySQL bool)
-        cursor.execute(
-            "SELECT email FROM users_web WHERE email = %s AND is_activated = %s",
-            (email, True)
-        )
-        user = cursor.fetchone()
-    except Exception as db_err:
-        current_app.logger.exception(f"[DB] Error during SELECT: {db_err}")
-        return jsonify({'status': 'error', 'message': "Database error."}), 500
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+        cur.execute("SELECT 1 FROM users_web WHERE LOWER(email)=LOWER(%s) AND is_activated=1 LIMIT 1", (email,))
+        exists = cur.fetchone() is not None
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        cur.close(); cnx.close()
 
-    if not user:
-        # On ne révèle pas si l’email existe ou non (sécurité), mais si tu veux garder:
-        return jsonify({'status': 'error', 'message': "User not found or not activated."}), 404
-
-    otp = str(random.randint(1000, 9999))
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
-    otp_storage[email] = {'otp': otp, 'expires_at': expires_at, 'attempts': 0, 'email': email}
+    # Génère même si l’email n’existe pas (neutre)
+    token = gen_reset_token_opaque(24)
+    token_hash = hash_token(token)
+    expires_at = datetime.utcnow() + timedelta(minutes=15)
 
     try:
-        send_otp_email(
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+        # Invalide anciens pending
+        cur.execute("""
+          UPDATE password_reset_requests 
+             SET status='CANCELLED' 
+           WHERE email=%s AND status IN ('PENDING','VERIFIED')
+        """, (email,))
+        # Crée la nouvelle demande
+        cur.execute("""
+          INSERT INTO password_reset_requests 
+              (email, token_hash, status, expires_at, created_ip, user_agent)
+          VALUES (%s, %s, 'PENDING', %s, %s, %s)
+        """, (email, token_hash, expires_at, request.remote_addr, request.headers.get("User-Agent", "") ))
+        cnx.commit()
+    finally:
+        cur.close(); cnx.close()
+
+    # Envoi email (lien magique) — même si email inconnu
+    try:
+        reset_url = f"https://assistbyscan.com/create-new-password?token={token}"
+        send_reset_email_link(
             to_email=email,
-            otp=otp,
+            reset_url=reset_url,
             sender_email=current_app.config["EMAIL_SENDER"],
             sender_password=current_app.config["EMAIL_PASSWORD"],
             smtp_host=current_app.config["SMTP_HOST"],
             smtp_port=current_app.config["SMTP_PORT"],
             use_ssl=current_app.config["SMTP_USE_SSL"],
         )
-        return jsonify({'status': 'success', 'message': "OTP sent to your email."})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
 
+    except Exception:
+        current_app.logger.exception("[MAIL] reset email failed")
 
+    return jsonify({"message":"If the account exists, a reset email has been sent."}), 200
 
-@bp.route('/verify_forget_web', methods=['POST'])
-def verify_forget_web():
-    data = request.get_json()
-    otp = data.get('otp')
-    email = data.get('email')
-    if not otp or not email:
-        return jsonify({'status': 'error', 'message': "Please enter the complete code"}), 400
+@bp.post("/password/verify")
+def password_verify():
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        return jsonify({"error":"missing_token"}), 400
 
-    record = otp_storage.get(email)
-    if not record:
-        return jsonify({'status': 'error', 'message': "No OTP found for this user."}), 404
-
-    # Limite des tentatives fixée à 5 par exemple
-    MAX_ATTEMPTS = 5
-    if record['attempts'] >= MAX_ATTEMPTS:
-        del otp_storage[email]  # suppression pour bloquer définitivement ou temporairement
-        return jsonify({'status': 'error', 'message': 'Too many attempts. OTP blocked.'}), 429
-
-    if datetime.utcnow() > record['expires_at']:
-        del otp_storage[email]
-        return jsonify({'status': 'error', 'message': "OTP expired."}), 400
-
-    if record['otp'] != otp:
-        record['attempts'] += 1  # <-- Incrémenter ici
-        return jsonify({'status': 'error', 'message': "Incorrect OTP."}), 400
-
-
-    del otp_storage[email]
-    return jsonify({'status': 'success', 'message': "User successfully verified."}), 200
-
-
-@bp.route('/change_password_web_forget', methods=['POST'])
-def change_password_web_forget():
-    data = request.json
-    email = data.get('email')
-    new_password = data.get('new_password')
-    confirm_password = data.get('confirm_password')
-
-    if not email or not new_password or not confirm_password:
-        return jsonify({'status': 'error', 'message': 'All fields are required.'}), 400
-    
-    if new_password != confirm_password:
-        return jsonify({'status': 'error', 'message': 'Passwords do not match.'}), 400
-    
-    if not is_valid_password(new_password):
-        return jsonify({
-            'status': 'error', 'message': 'Password must be at least 8 characters, include an uppercase letter, a number, and a special character.'
-        }), 400
-
-    hashed_password = hash_password(new_password)
+    token_hash = hash_token(token)
+    now = datetime.utcnow()
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE users_web SET password_hash = %s WHERE email = %s AND is_activated = %s
-        """, (hashed_password, email, True))
-        conn.commit()
-        return jsonify({'message': 'Password updated successfully!'}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
+        cnx = get_db_connection()
+        cur = cnx.cursor(dictionary=True)
+        cur.execute("""
+          SELECT id, email, status, expires_at, attempts 
+            FROM password_reset_requests
+           WHERE token_hash=%s
+           ORDER BY id DESC LIMIT 1
+        """, (token_hash,))
+        row = cur.fetchone()
     finally:
-        cursor.close()
-        conn.close()
+        cur.close(); cnx.close()
+
+    if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
+        return jsonify({"error":"invalid_or_used"}), 401
+    if now > row["expires_at"]:
+        # marque expiré
+        try:
+            cnx = get_db_connection()
+            cur = cnx.cursor()
+            cur.execute("UPDATE password_reset_requests SET status='EXPIRED' WHERE id=%s", (row["id"],))
+            cnx.commit()
+        finally:
+            cur.close(); cnx.close()
+        return jsonify({"error":"expired"}), 410
+
+    # Optionnel : passer en VERIFIED
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+        cur.execute("UPDATE password_reset_requests SET status='VERIFIED', verified_at=%s WHERE id=%s",
+                    (now, row["id"]))
+        cnx.commit()
+    finally:
+        cur.close(); cnx.close()
+
+    return jsonify({"ok": True}), 200
+
+
+@bp.post("/password/reset")
+def password_reset():
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("new_password") or ""
+    confirm_password = data.get("confirm_password") or ""
+
+    if not token or not new_password or not confirm_password:
+        return jsonify({"error":"missing_fields"}), 400
+    if new_password != confirm_password:
+        return jsonify({"error":"password_mismatch"}), 400
+    if not is_valid_password(new_password):
+        return jsonify({"error":"weak_password"}), 400
+
+    token_hash = hash_token(token)
+    now = datetime.utcnow()
+
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor(dictionary=True)
+        cur.execute("""
+          SELECT id, email, status, expires_at
+            FROM password_reset_requests
+           WHERE token_hash=%s
+           ORDER BY id DESC LIMIT 1
+        """, (token_hash,))
+        row = cur.fetchone()
+        if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
+            return jsonify({"error":"invalid_or_used"}), 401
+        if now > row["expires_at"]:
+            cur2 = cnx.cursor()
+            cur2.execute("UPDATE password_reset_requests SET status='EXPIRED' WHERE id=%s", (row["id"],))
+            cnx.commit()
+            cur2.close()
+            return jsonify({"error":"expired"}), 410
+
+        # MAJ password
+        hashed = hash_password(new_password)
+        cur.execute("UPDATE users_web SET password_hash=%s WHERE LOWER(email)=LOWER(%s) AND is_activated=1",
+                    (hashed, row["email"]))
+        # Marque USED
+        cur.execute("UPDATE password_reset_requests SET status='USED', used_at=%s WHERE id=%s",
+                    (now, row["id"]))
+        cnx.commit()
+    finally:
+        cur.close(); cnx.close()
+
+    return jsonify({"message":"Password updated"}), 200
+
 
 
 

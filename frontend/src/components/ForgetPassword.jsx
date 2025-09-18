@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 
-const ForgetPassword = ({ setOtpEmail }) => {
+const ForgetPassword = () => {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const handleSubmit = async (e) => {
-
     e.preventDefault();
     setMessage('');
     setFieldErrors({});
@@ -21,7 +19,6 @@ const ForgetPassword = ({ setOtpEmail }) => {
       setMessage('Email is required.');
       return;
     }
-
     if (!emailRegex.test(email)) {
       setFieldErrors({ email: 'Invalid email format.' });
       return;
@@ -29,38 +26,14 @@ const ForgetPassword = ({ setOtpEmail }) => {
 
     setLoading(true);
     try {
-      console.log(process.env.REACT_APP_API_URL)
-      const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/forgot_password_web`, {
-        email,
-      });
-    console.log("Response:", res);
-    console.log("Response data:", res.data);
-      if (res.data.status === 'success') {
-        setOtpEmail(email);        // Stocke l'email pour la vérification OTP
-        sessionStorage.setItem('otpEmail', email);
-        sessionStorage.setItem('previousPage', 'forget');
-        navigate('/verify-otp', { state: { previousPage: 'forget', email }, replace: true });
-
-      } else {
-        setMessage(res.data.message || 'Unexpected server response.');
-      }
+      await axios.post('/api/password/forgot', { email });
+      // Message neutre pour éviter l’énumération
+      setMessage('If the account exists, a reset email has been sent.');
     } catch (err) {
-      if (err.response?.data?.message) {
-        setMessage(err.response.data.message);
-      } else {
-        setMessage('Network or server error.');
-      }
+      setMessage('If the account exists, a reset email has been sent.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const renderFieldError = (field) => {
-    return fieldErrors[field] ? (
-      <p style={{ color: 'red', fontSize: '13px', marginTop: '-10px' }}>
-        {fieldErrors[field]}
-      </p>
-    ) : null;
   };
 
   return (
@@ -76,10 +49,14 @@ const ForgetPassword = ({ setOtpEmail }) => {
           onChange={(e) => setEmail(e.target.value)}
           style={inputStyle}
         />
-        {renderFieldError('email')}
+        {fieldErrors.email && (
+          <p style={{ color: 'red', fontSize: '13px', marginTop: '-10px' }}>
+            {fieldErrors.email}
+          </p>
+        )}
 
         <button type="submit" disabled={loading} style={buttonStyle}>
-          {loading ? 'Sending...' : 'Send OTP'}
+          {loading ? 'Sending…' : 'Send reset link'}
         </button>
       </form>
 
@@ -90,7 +67,6 @@ const ForgetPassword = ({ setOtpEmail }) => {
   );
 };
 
-// Styles
 const containerStyle = {
   maxWidth: '400px',
   margin: 'auto',
@@ -100,13 +76,7 @@ const containerStyle = {
   boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
   fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
 };
-
-const formStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '15px',
-};
-
+const formStyle = { display: 'flex', flexDirection: 'column', gap: '15px' };
 const inputStyle = {
   padding: '10px',
   fontSize: '16px',
@@ -116,7 +86,6 @@ const inputStyle = {
   width: '100%',
   boxSizing: 'border-box',
 };
-
 const buttonStyle = {
   backgroundColor: '#007bff',
   color: '#fff',
@@ -127,10 +96,6 @@ const buttonStyle = {
   cursor: 'pointer',
   fontSize: '16px',
 };
-
-const messageStyle = {
-  color: 'red',
-  fontWeight: 'bold',
-};
+const messageStyle = { color: 'green', fontWeight: 'bold' };
 
 export default ForgetPassword;

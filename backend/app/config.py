@@ -22,3 +22,4 @@ class Config:
     SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.ionos.com")
     SMTP_PORT      = int(os.getenv("SMTP_PORT", 587))
     SMTP_USE_SSL   = os.getenv("SMTP_USE_SSL", "False").lower() in ("true", "1")
+    
