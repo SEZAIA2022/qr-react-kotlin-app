@@ -2305,6 +2305,12 @@ def password_forgot():
              SET status='CANCELLED' 
            WHERE email=%s AND status IN ('PENDING','VERIFIED')
         """, (email,))
+        # Ensuite la suppression des lignes marquées CANCELLED ou USED
+        cur.execute("""
+            DELETE FROM password_reset_requests
+            WHERE email = %s
+            AND status IN ('CANCELLED', 'USED')
+        """, (email,))
         # Crée la nouvelle demande
         cur.execute("""
           INSERT INTO password_reset_requests 
@@ -2470,16 +2476,17 @@ def signup():
     try:
         cnx = get_db_connection()
         cur = cnx.cursor()
-        cur.execute("SELECT is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+        cur.execute("SELECT is_activated,role FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
         row = cur.fetchone()
         if row and row[0] == True:
             return jsonify({'status':'error','message':"Email already registered."}), 400
+        role = row[1] if row else None
     finally:
         if cur: cur.close()
         if cnx: cnx.close()
 
     # Prépare la demande
-    role = "user"
+    role = role 
     pwd_hash = hash_password(password)
     if isinstance(pwd_hash, bytes):
         pwd_hash = pwd_hash.decode("utf-8")
@@ -2507,7 +2514,12 @@ def signup():
              SET status='CANCELLED'
            WHERE email=%s AND status='PENDING'
         """, (email,))
-
+        # Ensuite la suppression des lignes marquées CANCELLED ou VERIFIED
+        cur.execute("""
+            DELETE FROM email_verifications
+            WHERE email = %s
+            AND status IN ('CANCELLED', 'USED')
+        """, (email,))
         # Crée une nouvelle demande
         cur.execute("""
           INSERT INTO email_verifications (email, token_hash, payload_json, expires_at, created_ip, user_agent)
