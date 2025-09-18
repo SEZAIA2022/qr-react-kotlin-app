@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 
@@ -8,7 +8,21 @@ const ForgetPassword = () => {
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // ⏱️ état pour le timer
+  const [cooldown, setCooldown] = useState(0);
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // Décrémentation automatique du timer
+  useEffect(() => {
+    let interval;
+    if (cooldown > 0) {
+      interval = setInterval(() => {
+        setCooldown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [cooldown]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,8 +41,8 @@ const ForgetPassword = () => {
     setLoading(true);
     try {
       await axios.post('/api/password/forgot', { email });
-      // Message neutre pour éviter l’énumération
       setMessage('If the account exists, a reset email has been sent.');
+      setCooldown(30); // ✅ 30 secondes avant de pouvoir recliquer
     } catch (err) {
       setMessage('If the account exists, a reset email has been sent.');
     } finally {
@@ -55,8 +69,20 @@ const ForgetPassword = () => {
           </p>
         )}
 
-        <button type="submit" disabled={loading} style={buttonStyle}>
-          {loading ? 'Sending…' : 'Send reset link'}
+        <button
+          type="submit"
+          disabled={loading || cooldown > 0}
+          style={{
+            ...buttonStyle,
+            backgroundColor: loading || cooldown > 0 ? '#6c757d' : '#007bff',
+            cursor: loading || cooldown > 0 ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {loading
+            ? 'Sending…'
+            : cooldown > 0
+            ? `Resend in ${cooldown}s`
+            : 'Send reset link'}
         </button>
       </form>
 
@@ -67,6 +93,7 @@ const ForgetPassword = () => {
   );
 };
 
+// Styles
 const containerStyle = {
   maxWidth: '400px',
   margin: 'auto',
