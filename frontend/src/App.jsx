@@ -17,7 +17,7 @@ import HelpPage from './components/HelpPage';
 
 import Signup from './components/Signup';
 import Login from './components/Login';
-import VerifyOtp from './components/VerifyOtp';
+import VerifyEmail from './components/VerifyEmail';
 import UserRegister from './components/UserRegister';
 import ForgetPassword from './components/ForgetPassword';
 import CreateNewPassword from './components/CreateNewPassword';
@@ -164,15 +164,7 @@ function App() {
               )
             }
           />
-          <Route
-            path="/verify-otp"
-            element={
-              <VerifyOtp
-                email={otpEmail}
-                setOtpEmail={setOtpEmail}
-              />
-            }
-          />
+           <Route path="/verify" element={<VerifyEmail />} />
 
           <Route
             path="/admin-dashboard"

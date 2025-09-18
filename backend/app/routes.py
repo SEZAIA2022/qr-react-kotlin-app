@@ -4,6 +4,7 @@ import smtplib
 import string
 import mysql.connector
 import os
+import json
 import random
 import re
 from datetime import datetime, timedelta
@@ -32,7 +33,8 @@ from .utils import (
     hash_token,
     timing_equal,
     send_reset_email_link,
-    limit_by_email
+    limit_by_email,
+    send_verification_email_link
 )
 from .database import get_db_connection
 
@@ -2265,163 +2267,7 @@ def login_web():
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Processing error: {str(e)}'}), 500
 
-@bp.route('/signup', methods=['POST'])
-def signup():
-    data = request.get_json()
-    if not data:
-        return jsonify({'status': 'error', 'message': 'No data received.'}), 400
 
-    required_fields = ["email", "city", "country", "application", "password", "confirm_password"]
-    errors = []
-
-    for field in required_fields:
-        if not data.get(field):
-            errors.append({'field': field, 'message': f"The field '{field.replace('_', ' ').capitalize()}' is required."})
-
-    email = data.get("email", "").strip()
-    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
-    if email and not re.match(email_regex, email):
-        errors.append({'field': 'email', 'message': 'Invalid email format.'})
-
-    password = data.get("password", "").strip()
-    confirm_password = data.get("confirm_password", "").strip()
-    if not is_valid_password(password):
-        errors.append({'field': 'password', 'message': "Password must be at least 8 characters long, include an uppercase letter, a number, and a special character."})
-    elif password != confirm_password:
-        errors.append({'field': 'confirm_password', 'message': "Passwords do not match."})
-
-    if errors:
-        return jsonify({'status': 'error', 'message': 'Validation errors.', 'errors': errors}), 400
-
-    cursor = None
-    conn = None
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT is_activated FROM users_web WHERE email = %s", (email,))
-        users = cursor.fetchone()
-        if users and users[0] == True:
-            return jsonify({'status': 'error', 'message': "Username or email already exists."}), 400
-
-        role = "user"
-
-        otp = str(random.randint(1000, 9999))
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-        password_hash = hash_password(password)
-        if isinstance(password_hash, bytes):
-            password_hash = password_hash.decode('utf-8')
-
-        register_otp_storage[email] = {
-            'email': email,
-            'password_hash': password_hash,
-            'city': data['city'],
-            'country': data['country'],
-            'application': data['application'],
-            'role': role,
-            'otp': otp,
-            'expires_at': expires_at,
-            'attempts': 0
-        }
-
-        send_otp_email(email, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
-
-        return jsonify({"message": "OTP sent to your email."}), 200
-
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-@bp.route('/verify_otp', methods=['POST'])
-def verify_otp():
-    data = request.get_json()
-    if not data:
-        return jsonify({'status': 'error', 'message': 'No data provided.'}), 400
-
-    email = data.get('email')
-    otp = data.get('otp')
-
-    if not email or not otp:
-        return jsonify({'status': 'error', 'message': 'Email and OTP are required.'}), 400
-
-    record = register_otp_storage.get(email)
-
-    if not record:
-        return jsonify({'status': 'error', 'message': 'No OTP found for this email.'}), 404
-
-    if datetime.utcnow() > record['expires_at']:
-        return jsonify({'status': 'error', 'message': 'OTP has expired.'}), 400
-
-    if otp != record['otp']:
-        record['attempts'] += 1
-        return jsonify({'status': 'error', 'message': 'Invalid OTP.'}), 400
-
-    # Récupération infos
-    password_hash = record['password_hash']
-    city = record['city']
-    country = record['country']
-    application = record['application']
-    role = record['role']
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Vérifier si l'utilisateur existe déjà
-        cursor.execute("SELECT id, is_activated FROM users_web WHERE email = %s", (email,))
-        existing_user = cursor.fetchone()
-
-        if existing_user:
-            user_id, is_activated = existing_user
-            if is_activated:
-                return jsonify({'status': 'error', 'message': 'User already exists.'}), 400
-
-            # Mise à jour de l'utilisateur inactif
-            cursor.execute("""
-                UPDATE users_web
-                SET password_hash = %s,
-                    city = %s,
-                    country = %s,
-                    application = %s,
-                    role = %s,
-                    created_at = NOW(),
-                    is_activated = %s
-                WHERE id = %s
-            """, (password_hash, city, country, application, role, True, user_id))
-
-        else:
-            # Nouvel utilisateur → trouver le prochain ID
-            cursor.execute("SELECT MAX(id) FROM users_web")
-            max_id_result = cursor.fetchone()
-            new_id = (max_id_result[0] or 0) + 1
-
-            cursor.execute("""
-                INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at, is_activated)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)
-            """, (new_id, email, password_hash, city, country, application, role, True))
-
-        # Ajouter dans static_pages
-        cursor.execute("INSERT INTO static_pages (application) VALUES (%s)", (application,))
-
-        conn.commit()
-
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Database error: {str(e)}'}), 500
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-    register_otp_storage.pop(email, None)
-    return jsonify({'status': 'success', 'message': 'OTP verified and user registered successfully.'}), 200
 
 
 
@@ -2591,19 +2437,173 @@ def password_reset():
 
 
 
-@bp.route("/debug-env")
-def debug_env():
-    from flask import current_app
-    return {
-        "SMTP_HOST": current_app.config.get("SMTP_HOST"),
-        "SMTP_PORT": current_app.config.get("SMTP_PORT"),
-        "SMTP_USE_SSL": current_app.config.get("SMTP_USE_SSL"),
-        "EMAIL_SENDER": current_app.config.get("EMAIL_SENDER"),
-        "EMAIL_PASSWORD_len": len(current_app.config.get("EMAIL_PASSWORD") or "")
+
+
+
+
+@bp.post("/signup")
+def signup():
+    data = request.get_json(force=True, silent=True) or {}
+    required = ["email", "city", "country", "application", "password", "confirm_password"]
+    errors = []
+
+    # validations
+    email = (data.get("email") or "").strip().lower()
+    for f in required:
+        if not data.get(f):
+            errors.append({'field': f, 'message': f"The field '{f.replace('_',' ').capitalize()}' is required."})
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    if email and not re.match(email_regex, email):
+        errors.append({'field':'email','message':'Invalid email format.'})
+
+    password = (data.get("password") or "").strip()
+    confirm  = (data.get("confirm_password") or "").strip()
+    if not is_valid_password(password):
+        errors.append({'field':'password','message':"Password must be at least 8 characters long, include an uppercase letter, a number, and a special character."})
+    elif password != confirm:
+        errors.append({'field':'confirm_password','message':"Passwords do not match."})
+
+    if errors:
+        return jsonify({'status':'error','message':'Validation errors.','errors':errors}), 400
+
+    # Vérifie si un compte actif existe déjà
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+        cur.execute("SELECT is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+        row = cur.fetchone()
+        if row and row[0] == True:
+            return jsonify({'status':'error','message':"Email already registered."}), 400
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    # Prépare la demande
+    role = "user"
+    pwd_hash = hash_password(password)
+    if isinstance(pwd_hash, bytes):
+        pwd_hash = pwd_hash.decode("utf-8")
+
+    payload = {
+        "email": email,
+        "password_hash": pwd_hash,
+        "city": data["city"],
+        "country": data["country"],
+        "application": data["application"],
+        "role": role
     }
 
+    token = gen_reset_token_opaque(24)
+    token_hash = hash_token(token)
+    expires_at = datetime.utcnow() + timedelta(minutes=30)
+
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+
+        # Annule anciennes demandes en attente
+        cur.execute("""
+          UPDATE email_verifications
+             SET status='CANCELLED'
+           WHERE email=%s AND status='PENDING'
+        """, (email,))
+
+        # Crée une nouvelle demande
+        cur.execute("""
+          INSERT INTO email_verifications (email, token_hash, payload_json, expires_at, created_ip, user_agent)
+          VALUES (%s, %s, %s, %s, %s, %s)
+        """, (email, token_hash, json.dumps(payload), expires_at, request.remote_addr, request.headers.get("User-Agent","")))
+        cnx.commit()
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    # Envoi e-mail
+    verify_url = f"https://assistbyscan.com/verify?token={token}"
+    try:
+        send_verification_email_link(
+            to_email=email,
+            verify_url=verify_url,
+            sender_email=current_app.config["EMAIL_SENDER"],
+            sender_password=current_app.config["EMAIL_PASSWORD"],
+            smtp_host=current_app.config["SMTP_HOST"],
+            smtp_port=current_app.config["SMTP_PORT"],
+            use_ssl=current_app.config["SMTP_USE_SSL"],
+        )
+    except Exception:
+        # on log mais on répond neutre (pas d’info-leak)
+        current_app.logger.exception("[MAIL] verification send failed")
+
+    # Réponse neutre
+    return jsonify({"status":"success","message":"If the email is valid, a verification link has been sent."}), 200
 
 
+
+@bp.post("/email/verify")
+def email_verify():
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        return jsonify({"status":"error","message":"missing token"}), 400
+
+    token_hash = hash_token(token)
+    now = datetime.utcnow()
+
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor(dictionary=True)
+        cur.execute("""
+          SELECT id, email, payload_json, status, expires_at
+            FROM email_verifications
+           WHERE token_hash=%s
+           ORDER BY id DESC LIMIT 1
+        """, (token_hash,))
+        row = cur.fetchone()
+        if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
+            return jsonify({"status":"error","message":"Invalid or used token."}), 401
+        if now > row["expires_at"]:
+            cur2 = cnx.cursor()
+            cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
+            cnx.commit()
+            cur2.close()
+            return jsonify({"status":"error","message":"Token expired."}), 410
+
+        payload = json.loads(row["payload_json"])
+        email = payload["email"]
+
+        # Crée/active le compte
+        cur.execute("SELECT id, is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+        existing = cur.fetchone()
+
+        if existing:
+            # met à jour si inactif
+            cur2 = cnx.cursor()
+            cur2.execute("""
+              UPDATE users_web
+                 SET password_hash=%s, city=%s, country=%s, application=%s, role=%s, is_activated=1, created_at=NOW()
+               WHERE LOWER(email)=LOWER(%s)
+            """, (payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"], email))
+            cur2.close()
+        else:
+            # insertion (laisse MySQL gérer AUTO_INCREMENT si possible)
+            cur2 = cnx.cursor()
+            cur2.execute("""
+              INSERT INTO users_web (email, password_hash, city, country, application, role, created_at, is_activated)
+              VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1)
+            """, (email, payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"]))
+            cur2.close()
+
+        # Marque le token utilisé
+        cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
+        cnx.commit()
+    except Exception as e:
+        current_app.logger.exception(e)
+        return jsonify({"status":"error","message":"Database error."}), 500
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    return jsonify({"status":"success","message":"Email verified and account activated."}), 200
 
 
 @bp.route('/register_user', methods=['POST'])

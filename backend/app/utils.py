@@ -183,6 +183,62 @@ def send_reset_email_link(
 
 import vonage
 
+
+def send_verification_email_link(
+    to_email: str,
+    verify_url: str,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int = 465,
+    use_ssl: bool = True,
+):
+    msg = EmailMessage()
+    msg["Subject"] = "Confirmez votre inscription"
+    msg["From"] = sender_email
+    msg["To"] = to_email
+
+    text_body = (
+        "Bonjour,\n\n"
+        "Veuillez confirmer votre inscription en cliquant sur ce lien :\n"
+        f"{verify_url}\n\n"
+        "Ce lien expirera dans 30 minutes.\n\n— Assist-by-Scan"
+    )
+    html_body = f"""\
+<!doctype html><html><body style="font-family:Arial">
+  <p>Bonjour,</p>
+  <p>Veuillez confirmer votre inscription :</p>
+  <p>
+    <a href="{verify_url}" style="display:inline-block;background:#0d6efd;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">
+      Confirmer mon compte
+    </a>
+  </p>
+  <p style="font-size:14px;color:#555">Ou copiez ce lien :<br><span style="word-break:break-all">{verify_url}</span></p>
+  <p style="font-size:13px;color:#777">Lien valable 30 minutes.</p>
+  <p>— Assist-by-Scan</p>
+</body></html>
+"""
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    # envoi (identique à tes autres fonctions)
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.ehlo(); server.starttls(); server.ehlo()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+    except Exception:
+        import traceback
+        current_app.logger.error("[MAIL] Verification email failed:\n" + traceback.format_exc())
+        raise
+
+
+
 def send_otp_sms(client, to_phone_number: str, otp: str, sender_name: str = "OTP"):
     sms = vonage.Sms(client)
     
