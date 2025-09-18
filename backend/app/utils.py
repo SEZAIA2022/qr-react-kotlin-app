@@ -195,7 +195,7 @@ def send_verification_email_link(
 ):
     msg = EmailMessage()
     msg["Subject"] = "Confirmez votre inscription"
-    msg["From"] = sender_email
+    msg["From"] = formataddr(("Assist-by-Scan", sender_email))
     msg["To"] = to_email
 
     text_body = (
