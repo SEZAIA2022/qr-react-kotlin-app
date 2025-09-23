@@ -488,7 +488,8 @@ def register():
         if cnx: cnx.close()
 
     # Envoi du lien
-    verify_url = f"https://assistbyscan.com/verify?token={token}"
+    verify_url = f"https://assistbyscan.com/verify?token={token}&flow=register_user"
+
     try:
         send_verification_email_link(
             to_email=email,
@@ -507,16 +508,112 @@ def register():
 
 
 
-@bp.post("/email/verify_register")
-def email_verify_register():
-    data = request.get_json(force=True, silent=True) or {}
-    token = (data.get("token") or "").strip()
+# @bp.post("/email/verify_register")
+# def email_verify_register():
+#     data = request.get_json(force=True, silent=True) or {}
+#     token = (data.get("token") or "").strip()
+#     if not token:
+#         return jsonify({"status":"error","message":"missing token"}), 400
+
+#     token_hash = hash_token(token)
+#     now = datetime.utcnow()
+
+#     try:
+#         cnx = get_db_connection()
+#         cur = cnx.cursor(dictionary=True)
+
+#         cur.execute("""
+#           SELECT id, email, payload_json, status, expires_at
+#             FROM email_verifications
+#            WHERE token_hash=%s
+#            ORDER BY id DESC
+#            LIMIT 1
+#         """, (token_hash,))
+#         row = cur.fetchone()
+
+#         if (not row) or row["status"] in ("USED","CANCELLED","EXPIRED"):
+#             return jsonify({"status":"error","message":"Invalid or used token."}), 401
+
+#         if now > row["expires_at"]:
+#             cur2 = cnx.cursor()
+#             cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
+#             cnx.commit()
+#             cur2.close()
+#             return jsonify({"status":"error","message":"Token expired."}), 410
+
+#         payload = json.loads(row["payload_json"])
+#         if payload.get("flow") != "register_user":
+#             # Si tu mutualises l’endpoint, tu peux router vers d’autres cas ici
+#             return jsonify({"status":"error","message":"Invalid flow for this token."}), 400
+
+#         email = payload["email"]
+
+#         # Double check: user déjà créé ?
+#         cur.execute("""
+#             SELECT id FROM users
+#              WHERE LOWER(email)=LOWER(%s) AND application=%s
+#              LIMIT 1
+#         """, (email, payload["application"]))
+#         exists = cur.fetchone()
+
+#         if not exists:
+#             # Insérer avec AUTO_INCREMENT (éviter MAX(id)+1)
+#             cur2 = cnx.cursor()
+#             cur2.execute("""
+#               INSERT INTO users
+#                   (username, email, password_hash, phone_number, address, role, city, code_postal, application, created_at)
+#               VALUES
+#                   (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+#             """, (
+#                 payload["username"],
+#                 email,
+#                 payload["password_hash"],
+#                 format_number_simple(payload["number"], payload["country_code"]),
+#                 payload["address"],
+#                 payload["role"],
+#                 payload["city"],
+#                 payload["postal_code"],
+#                 payload["application"]
+#             ))
+#             cur2.close()
+
+#         # Activer l’entrée correspondante dans registred_users
+#         cur3 = cnx.cursor()
+#         cur3.execute("""
+#             UPDATE registred_users
+#                SET is_activated = TRUE
+#              WHERE LOWER(email)=LOWER(%s) AND application=%s
+#         """, (email, payload["application"]))
+#         cur3.close()
+
+#         # Marquer le token comme USED
+#         cur.execute("""
+#             UPDATE email_verifications
+#                SET status='USED', used_at=%s
+#              WHERE id=%s
+#         """, (now, row["id"]))
+
+#         cnx.commit()
+
+#     except Exception as e:
+#         current_app.logger.exception(e)
+#         return jsonify({"status":"error","message":"Database error."}), 500
+#     finally:
+#         if cur: cur.close()
+#         if cnx: cnx.close()
+
+#     return jsonify({"status":"success","message":"Email verified and account created."}), 200
+
+# ---------- Helper commun ----------
+def _consume_email_verification(token: str):
     if not token:
-        return jsonify({"status":"error","message":"missing token"}), 400
+        return {"status": "error", "message": "missing token"}, 400
 
     token_hash = hash_token(token)
     now = datetime.utcnow()
 
+    cnx = None
+    cur = None
     try:
         cnx = get_db_connection()
         cur = cnx.cursor(dictionary=True)
@@ -530,79 +627,131 @@ def email_verify_register():
         """, (token_hash,))
         row = cur.fetchone()
 
-        if (not row) or row["status"] in ("USED","CANCELLED","EXPIRED"):
-            return jsonify({"status":"error","message":"Invalid or used token."}), 401
+        if (not row) or row["status"] in ("USED", "CANCELLED", "EXPIRED"):
+            return {"status": "error", "message": "Invalid or used token."}, 401
 
         if now > row["expires_at"]:
-            cur2 = cnx.cursor()
-            cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
+            cur.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
             cnx.commit()
-            cur2.close()
-            return jsonify({"status":"error","message":"Token expired."}), 410
+            return {"status": "error", "message": "Token expired."}, 410
 
-        payload = json.loads(row["payload_json"])
-        if payload.get("flow") != "register_user":
-            # Si tu mutualises l’endpoint, tu peux router vers d’autres cas ici
-            return jsonify({"status":"error","message":"Invalid flow for this token."}), 400
+        payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+        flow = payload.get("flow")  # "register_user" pour le flux mobile
+        email = payload.get("email")
 
-        email = payload["email"]
+        # ====== Cas 1 : nouveau flux mobile (users) ======
+        if flow == "register_user":
+            # Créer l'utilisateur s'il n'existe pas
+            cur.execute("""
+                SELECT id FROM users
+                 WHERE LOWER(email)=LOWER(%s) AND application=%s
+                 LIMIT 1
+            """, (email, payload.get("application")))
+            exists = cur.fetchone()
 
-        # Double check: user déjà créé ?
-        cur.execute("""
-            SELECT id FROM users
-             WHERE LOWER(email)=LOWER(%s) AND application=%s
-             LIMIT 1
-        """, (email, payload["application"]))
-        exists = cur.fetchone()
+            if not exists:
+                cur.execute("""
+                  INSERT INTO users
+                      (username, email, password_hash, phone_number, address, role,
+                       city, code_postal, application, created_at)
+                  VALUES
+                      (%s, %s, %s, %s, %s, %s,
+                       %s, %s, %s, NOW())
+                """, (
+                    payload.get("username"),
+                    email,
+                    payload.get("password_hash"),
+                    format_number_simple(payload.get("number"), payload.get("country_code")),
+                    payload.get("address"),
+                    payload.get("role"),
+                    payload.get("city"),
+                    payload.get("postal_code"),
+                    payload.get("application"),
+                ))
 
-        if not exists:
-            # Insérer avec AUTO_INCREMENT (éviter MAX(id)+1)
-            cur2 = cnx.cursor()
-            cur2.execute("""
-              INSERT INTO users
-                  (username, email, password_hash, phone_number, address, role, city, code_postal, application, created_at)
-              VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-            """, (
-                payload["username"],
-                email,
-                payload["password_hash"],
-                format_number_simple(payload["number"], payload["country_code"]),
-                payload["address"],
-                payload["role"],
-                payload["city"],
-                payload["postal_code"],
-                payload["application"]
-            ))
-            cur2.close()
+            # Activer registred_users si présent
+            cur.execute("""
+                UPDATE registred_users
+                   SET is_activated = TRUE
+                 WHERE LOWER(email)=LOWER(%s) AND application=%s
+            """, (email, payload.get("application")))
 
-        # Activer l’entrée correspondante dans registred_users
-        cur3 = cnx.cursor()
-        cur3.execute("""
-            UPDATE registred_users
-               SET is_activated = TRUE
-             WHERE LOWER(email)=LOWER(%s) AND application=%s
-        """, (email, payload["application"]))
-        cur3.close()
+            # Marquer le token USED
+            cur.execute("""
+                UPDATE email_verifications
+                   SET status='USED', used_at=%s
+                 WHERE id=%s
+            """, (now, row["id"]))
 
-        # Marquer le token comme USED
-        cur.execute("""
-            UPDATE email_verifications
-               SET status='USED', used_at=%s
-             WHERE id=%s
-        """, (now, row["id"]))
+            cnx.commit()
+            return {"status":"success",
+                    "message":"Email verified and account created.",
+                    "flow":"register_user"}, 200
+        # ====== Cas 2 : ancien flux web (users_web) ======
+        # Sécuriser les champs pour éviter KeyError
+        city_val = payload.get("city")
+        # 'country' peut ne pas exister dans les nouveaux payloads → défaut vide
+        country_val = payload.get("country", "")
+        app_val = payload.get("application")
+        role_val = payload.get("role")
+        pwd_hash = payload.get("password_hash")
 
+        # Existe déjà ?
+        cur.execute("SELECT id, is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+        existing = cur.fetchone()
+
+        if existing:
+            cur.execute("""
+              UPDATE users_web
+                 SET password_hash=%s, city=%s, country=%s, application=%s, role=%s,
+                     is_activated=1, created_at=NOW()
+               WHERE LOWER(email)=LOWER(%s)
+            """, (pwd_hash, city_val, country_val, app_val, role_val, email))
+        else:
+            cur.execute("""
+              INSERT INTO users_web (email, password_hash, city, country, application, role, created_at, is_activated)
+              VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1)
+            """, (email, pwd_hash, city_val, country_val, app_val, role_val))
+
+        cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
         cnx.commit()
+        return {"status":"success",
+                "message":"Email verified and account activated.",
+                "flow":"users_web"}, 200
 
     except Exception as e:
         current_app.logger.exception(e)
-        return jsonify({"status":"error","message":"Database error."}), 500
+        return {"status": "error", "message": "Database error."}, 500
     finally:
-        if cur: cur.close()
-        if cnx: cnx.close()
+        try:
+            if cur: cur.close()
+            if cnx: cnx.close()
+        except:
+            pass
 
-    return jsonify({"status":"success","message":"Email verified and account created."}), 200
 
+# ---------- Routes publiques (2 entrées, même logique) ----------
+
+# 1) Front Web : tu postes actuellement sur /api/email/verify
+@bp.route("/email/verify", methods=["GET", "POST"])
+def email_verify():
+    if request.method == "GET":
+        token = (request.args.get("token") or "").strip()
+    else:
+        data = request.get_json(force=True, silent=True) or {}
+        token = (data.get("token") or "").strip()
+
+    body, status = _consume_email_verification(token)
+    return jsonify(body), status
+
+
+# 2) Mobile/Android : garde /email/verify_register pour compat
+@bp.post("/email/verify_register")
+def email_verify_register():
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    body, status = _consume_email_verification(token)
+    return jsonify(body), status
 
 
 
@@ -2596,71 +2745,71 @@ def signup():
 
 
 
-@bp.post("/email/verify")
-def email_verify():
-    data = request.get_json(force=True, silent=True) or {}
-    token = (data.get("token") or "").strip()
-    if not token:
-        return jsonify({"status":"error","message":"missing token"}), 400
+# @bp.post("/email/verify")
+# def email_verify():
+#     data = request.get_json(force=True, silent=True) or {}
+#     token = (data.get("token") or "").strip()
+#     if not token:
+#         return jsonify({"status":"error","message":"missing token"}), 400
 
-    token_hash = hash_token(token)
-    now = datetime.utcnow()
+#     token_hash = hash_token(token)
+#     now = datetime.utcnow()
 
-    try:
-        cnx = get_db_connection()
-        cur = cnx.cursor(dictionary=True)
-        cur.execute("""
-          SELECT id, email, payload_json, status, expires_at
-            FROM email_verifications
-           WHERE token_hash=%s
-           ORDER BY id DESC LIMIT 1
-        """, (token_hash,))
-        row = cur.fetchone()
-        if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
-            return jsonify({"status":"error","message":"Invalid or used token."}), 401
-        if now > row["expires_at"]:
-            cur2 = cnx.cursor()
-            cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
-            cnx.commit()
-            cur2.close()
-            return jsonify({"status":"error","message":"Token expired."}), 410
+#     try:
+#         cnx = get_db_connection()
+#         cur = cnx.cursor(dictionary=True)
+#         cur.execute("""
+#           SELECT id, email, payload_json, status, expires_at
+#             FROM email_verifications
+#            WHERE token_hash=%s
+#            ORDER BY id DESC LIMIT 1
+#         """, (token_hash,))
+#         row = cur.fetchone()
+#         if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
+#             return jsonify({"status":"error","message":"Invalid or used token."}), 401
+#         if now > row["expires_at"]:
+#             cur2 = cnx.cursor()
+#             cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
+#             cnx.commit()
+#             cur2.close()
+#             return jsonify({"status":"error","message":"Token expired."}), 410
 
-        payload = json.loads(row["payload_json"])
-        email = payload["email"]
+#         payload = json.loads(row["payload_json"])
+#         email = payload["email"]
 
-        # Crée/active le compte
-        cur.execute("SELECT id, is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
-        existing = cur.fetchone()
+#         # Crée/active le compte
+#         cur.execute("SELECT id, is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+#         existing = cur.fetchone()
 
-        if existing:
-            # met à jour si inactif
-            cur2 = cnx.cursor()
-            cur2.execute("""
-              UPDATE users_web
-                 SET password_hash=%s, city=%s, country=%s, application=%s, role=%s, is_activated=1, created_at=NOW()
-               WHERE LOWER(email)=LOWER(%s)
-            """, (payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"], email))
-            cur2.close()
-        else:
-            # insertion (laisse MySQL gérer AUTO_INCREMENT si possible)
-            cur2 = cnx.cursor()
-            cur2.execute("""
-              INSERT INTO users_web (email, password_hash, city, country, application, role, created_at, is_activated)
-              VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1)
-            """, (email, payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"]))
-            cur2.close()
+#         if existing:
+#             # met à jour si inactif
+#             cur2 = cnx.cursor()
+#             cur2.execute("""
+#               UPDATE users_web
+#                  SET password_hash=%s, city=%s, country=%s, application=%s, role=%s, is_activated=1, created_at=NOW()
+#                WHERE LOWER(email)=LOWER(%s)
+#             """, (payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"], email))
+#             cur2.close()
+#         else:
+#             # insertion (laisse MySQL gérer AUTO_INCREMENT si possible)
+#             cur2 = cnx.cursor()
+#             cur2.execute("""
+#               INSERT INTO users_web (email, password_hash, city, country, application, role, created_at, is_activated)
+#               VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1)
+#             """, (email, payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"]))
+#             cur2.close()
 
-        # Marque le token utilisé
-        cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
-        cnx.commit()
-    except Exception as e:
-        current_app.logger.exception(e)
-        return jsonify({"status":"error","message":"Database error."}), 500
-    finally:
-        if cur: cur.close()
-        if cnx: cnx.close()
+#         # Marque le token utilisé
+#         cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
+#         cnx.commit()
+#     except Exception as e:
+#         current_app.logger.exception(e)
+#         return jsonify({"status":"error","message":"Database error."}), 500
+#     finally:
+#         if cur: cur.close()
+#         if cnx: cnx.close()
 
-    return jsonify({"status":"success","message":"Email verified and account activated."}), 200
+#     return jsonify({"status":"success","message":"Email verified and account activated."}), 200
 
 
 @bp.route('/register_user', methods=['POST'])

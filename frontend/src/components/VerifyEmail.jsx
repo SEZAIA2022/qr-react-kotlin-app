@@ -5,9 +5,14 @@ import axios from 'axios';
 const VerifyEmail = () => {
   const { search } = useLocation();
   const navigate = useNavigate();
-  const token = new URLSearchParams(search).get('token') || '';
-  const [status, setStatus] = useState('verifying'); // verifying | ok | fail
+
+  const qp = new URLSearchParams(search);
+  const token = qp.get('token') || '';
+  const flowParam = qp.get('flow') || ''; // "register_user" si lien depuis /register
+
+  const [status, setStatus] = useState('verifying'); // 'verifying' | 'ok' | 'fail'
   const [message, setMessage] = useState('');
+  const [showLoginButton, setShowLoginButton] = useState(true);
 
   useEffect(() => {
     if (!token) {
@@ -16,22 +21,37 @@ const VerifyEmail = () => {
       return;
     }
 
+    const endpoint =
+      flowParam === 'register_user'
+        ? '/api/email/verify_register'
+        : '/api/email/verify';
+
     (async () => {
       try {
-        const res = await axios.post('/api/email/verify', { token });
-        if (res.status === 200 && res.data.status === 'success') {
+        const res = await axios.post(endpoint, { token });
+        const ok = res.status === 200 && res.data && res.data.status === 'success';
+        if (ok) {
           setStatus('ok');
-          setMessage(res.data.message || 'Your email has been verified.');
+          setMessage((res.data && res.data.message) || 'Your email has been verified.');
+
+          // Cacher le bouton si flux register_user
+          const flowFromApi = (res.data && res.data.flow) || '';
+          const isRegisterFlow =
+            flowParam === 'register_user' || flowFromApi === 'register_user';
+          setShowLoginButton(!isRegisterFlow);
         } else {
           setStatus('fail');
-          setMessage(res.data.message || 'Invalid or expired link.');
+          setMessage((res.data && res.data.message) || 'Invalid or expired link.');
         }
       } catch (err) {
+        const apiMsg =
+          (err.response && err.response.data && err.response.data.message) ||
+          'Verification failed.';
         setStatus('fail');
-        setMessage(err.response?.data?.message || 'Verification failed.');
+        setMessage(apiMsg);
       }
     })();
-  }, [token]);
+  }, [token, flowParam]);
 
   if (status === 'verifying') {
     return (
@@ -47,9 +67,11 @@ const VerifyEmail = () => {
       <div style={containerStyle}>
         <h2>✅ Email Verified</h2>
         <p>{message}</p>
-        <button style={buttonStyle} onClick={() => navigate('/login')}>
-          Go to Login
-        </button>
+        {showLoginButton && (
+          <button style={buttonStyle} onClick={() => navigate('/login')}>
+            Go to Login
+          </button>
+        )}
       </div>
     );
   }
@@ -65,7 +87,7 @@ const VerifyEmail = () => {
   );
 };
 
-// Styles
+// Styles (JS pur)
 const containerStyle = {
   maxWidth: '400px',
   margin: '50px auto',
