@@ -2471,10 +2471,6 @@ def password_forgot():
     email = (data.get("email") or "").strip().lower()
     if not email:
         return jsonify({"message":"If the account exists, a reset email has been sent."}), 200
-
-    # Rate limit (pseudo) : à faire via Flask-Limiter
-    # limiter.limit("5/hour")(password_forgot)
-
     # Cherche l’utilisateur (facultatif, mais utile pour TTL/log) :
     exists = False
     try:
