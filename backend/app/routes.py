@@ -1708,6 +1708,8 @@ def get_taken_slots():
 @bp.route('/cancel_appointment', methods=['POST'])
 def cancel_appointment():
     import traceback
+    conn = None
+    cursor = None
     try:
         data = request.get_json()
         repair_id = data.get('id')
@@ -1723,7 +1725,7 @@ def cancel_appointment():
         result = cursor.fetchone()
         if not result:
             return jsonify({'status': 'error', 'message': 'Repair not found'}), 404
-        
+
         username, qr_code = result
 
         # Supprimer la ligne dans ask_repair
@@ -1741,16 +1743,13 @@ def cancel_appointment():
         max_id = cursor.fetchone()[0]
         new_auto_inc = (max_id or 0) + 1
         cursor.execute(f"ALTER TABLE responses AUTO_INCREMENT = {new_auto_inc};")
-
         conn.commit()
 
         cursor.execute("SELECT MAX(id) FROM ask_repair;")
         max_id = cursor.fetchone()[0]
         new_auto_inc = (max_id or 0) + 1
         cursor.execute(f"ALTER TABLE ask_repair AUTO_INCREMENT = {new_auto_inc};")
-
         conn.commit()
-
 
         return jsonify({'status': 'success', 'message': 'Appointment and related responses deleted successfully'}), 200
 
@@ -1759,32 +1758,46 @@ def cancel_appointment():
         return jsonify({'status': 'error', 'message': f'Internal server error: {str(e)}'}), 500
 
     finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+        try:
+            if cursor:
+                cursor.close()
+            if conn and getattr(conn, "is_connected", lambda: False)():
+                conn.close()
+        except Exception:
+            pass
+
 
 
 @bp.route('/get_qrcodes', methods=['GET'])
 def get_qrcodes():
-    application = request.args.get('application')  # Récupère le paramètre ?application=..
+    application = request.args.get('application')
+    connection = None
+    cursor = None
     try:
-        connection =get_db_connection()
+        connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
 
-        cursor.execute("SELECT qr_code FROM qr_codes WHERE is_active = %s AND application = %s", (1, application))
+        cursor.execute(
+            "SELECT qr_code FROM qr_codes WHERE is_active = %s AND application = %s",
+            (1, application)
+        )
         results = cursor.fetchall()
 
-
-        qrcodes = [row['qr_code'] for row in results if row['qr_code']]  # Exclut les valeurs nulles
+        qrcodes = [row['qr_code'] for row in results if row['qr_code']]
         return jsonify({'status': 'success', 'qrcodes': qrcodes}), 200
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
     finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and getattr(connection, "is_connected", lambda: False)():
+                connection.close()
+        except Exception:
+            pass
+
             
 
 
@@ -2741,73 +2754,6 @@ def signup():
 
 
 
-# @bp.post("/email/verify")
-# def email_verify():
-#     data = request.get_json(force=True, silent=True) or {}
-#     token = (data.get("token") or "").strip()
-#     if not token:
-#         return jsonify({"status":"error","message":"missing token"}), 400
-
-#     token_hash = hash_token(token)
-#     now = datetime.utcnow()
-
-#     try:
-#         cnx = get_db_connection()
-#         cur = cnx.cursor(dictionary=True)
-#         cur.execute("""
-#           SELECT id, email, payload_json, status, expires_at
-#             FROM email_verifications
-#            WHERE token_hash=%s
-#            ORDER BY id DESC LIMIT 1
-#         """, (token_hash,))
-#         row = cur.fetchone()
-#         if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
-#             return jsonify({"status":"error","message":"Invalid or used token."}), 401
-#         if now > row["expires_at"]:
-#             cur2 = cnx.cursor()
-#             cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
-#             cnx.commit()
-#             cur2.close()
-#             return jsonify({"status":"error","message":"Token expired."}), 410
-
-#         payload = json.loads(row["payload_json"])
-#         email = payload["email"]
-
-#         # Crée/active le compte
-#         cur.execute("SELECT id, is_activated FROM users_web WHERE LOWER(email)=LOWER(%s) LIMIT 1", (email,))
-#         existing = cur.fetchone()
-
-#         if existing:
-#             # met à jour si inactif
-#             cur2 = cnx.cursor()
-#             cur2.execute("""
-#               UPDATE users_web
-#                  SET password_hash=%s, city=%s, country=%s, application=%s, role=%s, is_activated=1, created_at=NOW()
-#                WHERE LOWER(email)=LOWER(%s)
-#             """, (payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"], email))
-#             cur2.close()
-#         else:
-#             # insertion (laisse MySQL gérer AUTO_INCREMENT si possible)
-#             cur2 = cnx.cursor()
-#             cur2.execute("""
-#               INSERT INTO users_web (email, password_hash, city, country, application, role, created_at, is_activated)
-#               VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1)
-#             """, (email, payload["password_hash"], payload["city"], payload["country"], payload["application"], payload["role"]))
-#             cur2.close()
-
-#         # Marque le token utilisé
-#         cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
-#         cnx.commit()
-#     except Exception as e:
-#         current_app.logger.exception(e)
-#         return jsonify({"status":"error","message":"Database error."}), 500
-#     finally:
-#         if cur: cur.close()
-#         if cnx: cnx.close()
-
-#     return jsonify({"status":"success","message":"Email verified and account activated."}), 200
-
-
 @bp.route('/register_user', methods=['POST'])
 def register_user():
     data = request.get_json()
@@ -2875,11 +2821,11 @@ def register_user():
             conn.close()
 
 
-
-
 @bp.route('/qr_history', methods=['GET'])
 def qr_history():
     application = request.args.get('application')
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -2907,12 +2853,18 @@ def qr_history():
         return jsonify({"status": "error", "message": str(e)}), 500
 
     finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+        try:
+            if cursor:
+                cursor.close()
+            if conn and getattr(conn, "is_connected", lambda: False)():
+                conn.close()
+        except Exception:
+            pass
 
 @bp.route('/get_all_user_web', methods=['GET'])
 def get_all_users():
+    connection = None
+    cursor = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
@@ -2926,10 +2878,7 @@ def get_all_users():
             FROM qr_codes
             GROUP BY application
         ) q ON u.application = q.application
-        
         """
-        # WHERE u.role = 'user'
-
         cursor.execute(query)
         users = cursor.fetchall()
 
@@ -2940,9 +2889,13 @@ def get_all_users():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
     finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and getattr(connection, "is_connected", lambda: False)():
+                connection.close()
+        except Exception:
+            pass
 
 
 @bp.route('/user_register_web', methods=['POST'])
@@ -2955,15 +2908,14 @@ def user_register_web():
     if not email or not role or not application:
         return jsonify({'status': 'error', 'message': 'Missing required fields.'}), 400
 
+    connection = None
+    cursor = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
 
-        # Get max id from users_web table
         cursor.execute("SELECT MAX(id) FROM users_web")
-        max_id = cursor.fetchone()[0]
-        if max_id is None:
-            max_id = 0
+        max_id = cursor.fetchone()[0] or 0
         new_id = max_id + 1
 
         query = """
@@ -2978,11 +2930,16 @@ def user_register_web():
         return jsonify({'status': 'error', 'message': 'Database error.'}), 500
 
     finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and getattr(connection, "is_connected", lambda: False)():
+                connection.close()
+        except Exception:
+            pass
 
     return jsonify({'status': 'success'}), 201
+
 
 @bp.route('/delete_user_web/<int:user_id>', methods=['DELETE'])
 def delete_user_web(user_id):
