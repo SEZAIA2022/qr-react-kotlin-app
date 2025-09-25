@@ -207,18 +207,25 @@ function App() {
   );
 }
 
+
 const NavBar = ({ isAuthenticated, onLogout }) => {
   const location = useLocation();
-  // Définir une variable qui regroupe les 2 routes où on veut la navbar admin
-  const isAdminSection = ['/admin-dashboard', '/user_register_web'].includes(location.pathname);
+
+  // 👉 Ne pas afficher la barre sur la page de vérification d’email
+  if (location.pathname === '/verify') {
+    return null; // rien n'est rendu, la navbar disparaît totalement
+  }
+
+  const isAdminSection = ['/admin-dashboard', '/user_register_web']
+    .includes(location.pathname);
 
   return (
     <nav style={navStyle}>
       {isAuthenticated ? (
         isAdminSection ? (
-          // Navbar admin commune pour admin-dashboard ET user_register_web
           <>
-            <CustomLink to="/admin-dashboard" active={location.pathname === '/admin-dashboard'}>
+            <CustomLink to="/admin-dashboard"
+              active={location.pathname === '/admin-dashboard'}>
               Admin Dashboard
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
@@ -237,7 +244,6 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
               Register user
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
-
             <button
               onClick={onLogout}
               style={{
@@ -253,25 +259,29 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
             </button>
           </>
         ) : (
-          // Navbar utilisateur normal
           <>
-            <CustomLink to="/qr-generator" active={location.pathname === '/qr-generator'}>
+            <CustomLink to="/qr-generator"
+              active={location.pathname === '/qr-generator'}>
               QR generator
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
-            <CustomLink to="/questions" active={location.pathname === '/questions'}>
+            <CustomLink to="/questions"
+              active={location.pathname === '/questions'}>
               Questions
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
-            <CustomLink to="/static_page" active={location.pathname === '/static_page'}>
+            <CustomLink to="/static_page"
+              active={location.pathname === '/static_page'}>
               Static page
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
-            <CustomLink to="/help_page" active={location.pathname === '/help_page'}>
+            <CustomLink to="/help_page"
+              active={location.pathname === '/help_page'}>
               Help center
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
-            <CustomLink to="/user_register" active={location.pathname === '/user_register'}>
+            <CustomLink to="/user_register"
+              active={location.pathname === '/user_register'}>
               Register user
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
@@ -305,6 +315,8 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
     </nav>
   );
 };
+
+
 
 
 const CustomLink = ({ to, active, children }) => {

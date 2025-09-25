@@ -2938,5 +2938,3 @@ def delete_user():
             cursor.close()
         if conn:
             conn.close()
-
-
