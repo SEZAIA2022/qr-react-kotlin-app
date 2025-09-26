@@ -8,7 +8,7 @@ const VerifyEmail = () => {
 
   const qp = new URLSearchParams(search);
   const token = qp.get('token') || '';
-  const flowParam = qp.get('flow') || ''; // "register_user" si lien depuis /register
+  const flowParam = (qp.get('flow') || '').toLowerCase(); // "register_user" | "change_email" | "delete_account"
 
   const [status, setStatus] = useState('verifying'); // 'verifying' | 'ok' | 'fail'
   const [message, setMessage] = useState('');
@@ -21,31 +21,49 @@ const VerifyEmail = () => {
       return;
     }
 
-    const endpoint =
-      flowParam === 'register_user'
-        ? '/api/email/verify_register'
-        : '/api/email/verify';
+    // Choisir l’endpoint selon le flow
+    let endpoint = '/api/email/verify'; // défaut: vérification d'inscription
+    if (flowParam === 'register_user') {
+      endpoint = '/api/email/verify';             // ou '/api/email/verify_register' si c’est ton backend
+    } else if (flowParam === 'change_email') {
+      endpoint = '/api/verify_change_email';
+    } else if (flowParam === 'delete_account') {
+      endpoint = '/api/verify_delete_account';
+    }
 
     (async () => {
       try {
         const res = await axios.post(endpoint, { token });
-        const ok = res.status === 200 && res.data && res.data.status === 'success';
+        const ok = res.status === 200 && res.data;
+
         if (ok) {
           setStatus('ok');
-          setMessage((res.data && res.data.message) || 'Your email has been verified.');
 
-          // Cacher le bouton si flux register_user
-          const flowFromApi = (res.data && res.data.flow) || '';
-          const isRegisterFlow =
-            flowParam === 'register_user' || flowFromApi === 'register_user';
-          setShowLoginButton(!isRegisterFlow);
+          // Message par défaut selon le flow
+          let defaultMsg = 'Your email has been verified.';
+          if (flowParam === 'change_email') defaultMsg = 'Your email address has been changed successfully.';
+          if (flowParam === 'delete_account') defaultMsg = 'Your account has been deleted.';
+
+          setMessage(res.data.message || defaultMsg);
+
+          // Afficher le bouton login seulement si ça a du sens
+          // (pas pour delete_account ; pour change_email oui ; pour register_user à toi de voir)
+          if (flowParam === 'delete_account') {
+            setShowLoginButton(false);
+          } else if (flowParam === 'register_user') {
+            // tu peux mettre false si tu veux rediriger automatiquement vers /login
+            setShowLoginButton(true);
+          } else {
+            setShowLoginButton(true);
+          }
         } else {
           setStatus('fail');
           setMessage((res.data && res.data.message) || 'Invalid or expired link.');
         }
       } catch (err) {
         const apiMsg =
-          (err.response && err.response.data && err.response.data.message) ||
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
           'Verification failed.';
         setStatus('fail');
         setMessage(apiMsg);
@@ -56,7 +74,7 @@ const VerifyEmail = () => {
   if (status === 'verifying') {
     return (
       <div style={containerStyle}>
-        <h2>Verifying your email…</h2>
+        <h2>Verifying your request…</h2>
         <p>Please wait a moment.</p>
       </div>
     );
@@ -65,8 +83,9 @@ const VerifyEmail = () => {
   if (status === 'ok') {
     return (
       <div style={containerStyle}>
-        <h2>✅ Email Verified</h2>
+        <h2>✅ Success</h2>
         <p>{message}</p>
+
         {showLoginButton && (
           <button style={buttonStyle} onClick={() => navigate('/login')}>
             Go to Login
@@ -80,32 +99,32 @@ const VerifyEmail = () => {
     <div style={containerStyle}>
       <h2>❌ Verification Failed</h2>
       <p>{message}</p>
-      <Link to="/signup" style={{ color: '#007bff', fontWeight: 'bold' }}>
-        Try signing up again
+      <Link to="/login" style={{ color: '#007bff', fontWeight: 'bold' }}>
+        Back to Login
       </Link>
     </div>
   );
 };
 
-// Styles (JS pur)
+// Styles
 const containerStyle = {
-  maxWidth: '400px',
+  maxWidth: '420px',
   margin: '50px auto',
-  padding: '20px',
+  padding: '22px',
   backgroundColor: '#f9faff',
-  borderRadius: '8px',
-  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+  borderRadius: '10px',
+  boxShadow: '0 8px 30px rgba(0,0,0,0.06)',
   fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
   textAlign: 'center',
 };
 const buttonStyle = {
-  marginTop: '20px',
+  marginTop: '18px',
   backgroundColor: '#007bff',
   color: '#fff',
-  fontWeight: 'bold',
+  fontWeight: 600,
   border: 'none',
-  padding: '12px 20px',
-  borderRadius: '8px',
+  padding: '12px 18px',
+  borderRadius: '10px',
   cursor: 'pointer',
   fontSize: '16px',
 };

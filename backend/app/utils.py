@@ -254,6 +254,131 @@ def send_otp_sms(client, to_phone_number: str, otp: str, sender_name: str = "OTP
     else:
         return f"Erreur: {response_data['messages'][0]['error-text']}"
 
+def send_change_email_link(
+    to_email: str,
+    verify_url: str,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int = 465,
+    use_ssl: bool = True,
+):
+    """Envoie un e-mail pour confirmer le changement d'adresse e-mail."""
+    msg = EmailMessage()
+    msg["Subject"] = "Confirmez votre nouvelle adresse e-mail"
+    msg["From"] = formataddr(("Assist-by-Scan", sender_email))
+    msg["To"] = to_email
+
+    text_body = (
+        "Bonjour,\n\n"
+        "Vous avez demandé le changement de votre adresse e-mail.\n"
+        "Cliquez sur ce lien pour confirmer :\n"
+        f"{verify_url}\n\n"
+        "Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.\n"
+        "Ce lien expirera dans 30 minutes.\n\n— Assist-by-Scan"
+    )
+
+    html_body = f"""\
+<!doctype html><html><body style="font-family:Arial">
+  <p>Bonjour,</p>
+  <p>Vous avez demandé le changement de votre adresse e-mail.<br>
+     Veuillez confirmer cette opération&nbsp;:</p>
+  <p>
+    <a href="{verify_url}" style="display:inline-block;background:#0d6efd;color:#fff;
+       padding:10px 16px;border-radius:6px;text-decoration:none;">
+       Confirmer le changement
+    </a>
+  </p>
+  <p style="font-size:14px;color:#555">
+     Ou copiez ce lien :<br><span style="word-break:break-all">{verify_url}</span>
+  </p>
+  <p style="font-size:13px;color:#777">
+     Lien valable 30 minutes. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.
+  </p>
+  <p>— Assist-by-Scan</p>
+</body></html>
+"""
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+    except Exception:
+        import traceback
+        current_app.logger.error("[MAIL] Change-email failed:\n" + traceback.format_exc())
+        raise
+
+def send_delete_account_email(
+    to_email: str,
+    verify_url: str,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int = 465,
+    use_ssl: bool = True,
+):
+    """Envoie un e-mail pour confirmer la suppression définitive du compte."""
+    msg = EmailMessage()
+    msg["Subject"] = "Confirmez la suppression de votre compte"
+    msg["From"] = formataddr(("Assist-by-Scan", sender_email))
+    msg["To"] = to_email
+
+    text_body = (
+        "Bonjour,\n\n"
+        "Vous avez demandé la suppression définitive de votre compte.\n"
+        "Cette action est irréversible.\n"
+        "Pour confirmer, cliquez sur ce lien :\n"
+        f"{verify_url}\n\n"
+        "Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.\n"
+        "Ce lien expirera dans 30 minutes.\n\n— Assist-by-Scan"
+    )
+
+    html_body = f"""\
+<!doctype html><html><body style="font-family:Arial">
+  <p>Bonjour,</p>
+  <p>Vous avez demandé la <strong>suppression définitive</strong> de votre compte.
+     Cette action est <strong>irréversible</strong>.<br>
+     Pour confirmer&nbsp;:</p>
+  <p>
+    <a href="{verify_url}" style="display:inline-block;background:#dc3545;color:#fff;
+       padding:10px 16px;border-radius:6px;text-decoration:none;">
+       Supprimer mon compte
+    </a>
+  </p>
+  <p style="font-size:14px;color:#555">
+     Ou copiez ce lien :<br><span style="word-break:break-all">{verify_url}</span>
+  </p>
+  <p style="font-size:13px;color:#777">
+     Lien valable 30 minutes. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.
+  </p>
+  <p>— Assist-by-Scan</p>
+</body></html>
+"""
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+    except Exception:
+        import traceback
+        current_app.logger.error("[MAIL] Delete-account email failed:\n" + traceback.format_exc())
+        raise
 
 # def send_otp_sms(client: Client, to_phone_number: str, otp: str, twilio_phone_number: str):
 #     message = client.messages.create(

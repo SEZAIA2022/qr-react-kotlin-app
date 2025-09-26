@@ -34,7 +34,9 @@ from .utils import (
     timing_equal,
     send_reset_email_link,
     limit_by_email,
-    send_verification_email_link
+    send_verification_email_link,
+    send_change_email_link,
+    send_delete_account_email
 )
 from .database import get_db_connection
 
@@ -477,6 +479,7 @@ def register():
         cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM email_verifications")
         next_id = cur.fetchone()[0]
         # Créer la nouvelle demande
+    
         cur.execute("""
           INSERT INTO email_verifications
               (id, email, token_hash, payload_json, expires_at, created_ip, user_agent, status, created_at)
@@ -554,16 +557,20 @@ def _consume_email_verification(token: str):
                  LIMIT 1
             """, (email, payload.get("application")))
             exists = cur.fetchone()
+            cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM users")
+            next_id = cur.fetchone()["next_id"]
+
 
             if not exists:
                 cur.execute("""
                   INSERT INTO users
-                      (username, email, password_hash, phone_number, address, role,
+                      (id,username, email, password_hash, phone_number, address, role,
                        city, code_postal, application, created_at)
                   VALUES
-                      (%s, %s, %s, %s, %s, %s,
+                      (%s, %s, %s, %s, %s, %s, %s,
                        %s, %s, %s, NOW())
                 """, (
+                    next_id,
                     payload.get("username"),
                     email,
                     payload.get("password_hash"),
@@ -614,10 +621,12 @@ def _consume_email_verification(token: str):
                WHERE LOWER(email)=LOWER(%s)
             """, (pwd_hash, city_val, country_val, app_val, role_val, email))
         else:
+            cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM users_web")
+            next_id = cur.fetchone()[0]
             cur.execute("""
-              INSERT INTO users_web (email, password_hash, city, country, application, role, created_at, is_activated)
-              VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1)
-            """, (email, pwd_hash, city_val, country_val, app_val, role_val))
+              INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at, is_activated)
+              VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), 1)
+            """, (next_id, email, pwd_hash, city_val, country_val, app_val, role_val))
 
         cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
         cnx.commit()
@@ -1019,124 +1028,412 @@ def change_username():
         return jsonify({'status': 'error', 'message': f'Processing error.: {str(e)}'}), 500
 
 
-@bp.route('/change_email', methods=['POST'])
+@bp.post("/change_email")
 def change_email():
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True) or {}
+    email       = (data.get('email') or '').strip().lower()
+    new_email   = (data.get('new_email') or '').strip().lower()
+    password    = (data.get('password') or '').strip()
+    application = (data.get('application_name') or '').strip()
 
-    if not data:
-        return jsonify({'status': 'error', 'message': 'No data received.'}), 400
-    
-    new_email = data.get('new_email')
-    email = data.get('email')
-    password = data.get('password')
-    application = data.get('application_name')
-    if not email or not password or not new_email:
-        return jsonify({'status': 'error', 'message': 'All fields are required.'}), 400
+    # validations basiques (réponse neutre sur le résultat final)
+    if not email or not new_email or not password or not application:
+        return jsonify({'status':'error','message':'All fields are required.'}), 400
+    if email == new_email:
+        return jsonify({'status':'error','message':'New email cannot be the same as current email.'}), 400
 
     email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     if not re.match(email_regex, email) or not re.match(email_regex, new_email):
-        return jsonify({'status': 'error', 'message': 'The email format is invalid.'}), 400
+        return jsonify({'status':'error','message':'The email format is invalid.'}), 400
 
-    if email == new_email:
-        return jsonify({'status': 'error', 'message': "New email cannot be the same as current email."}), 400
+    # 1) Vérifier le compte et le mot de passe sans info-leak vers l’extérieur
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+        cur.execute("""
+            SELECT password_hash
+              FROM users
+             WHERE LOWER(email)=LOWER(%s) AND LOWER(application)=LOWER(%s)
+             LIMIT 1
+        """, (email, application))
+        row = cur.fetchone()
+        if not row:
+            # compte introuvable → réponse neutre
+            return jsonify({'status':'success','message':'If valid, a confirmation link was sent to the new email.'}), 200
 
-    if is_email_taken(new_email):
-        return jsonify({'status': 'error', 'message': 'This email is already in use.'}), 400
+        stored_hash = row[0]
+        if isinstance(stored_hash, str):
+            stored_hash = stored_hash.encode('utf-8')
+        if not verify_password(password, stored_hash):
+            # mauvais mot de passe → message explicite (utile UX)
+            return jsonify({'status':'error','message':'Incorrect password.'}), 401
+    except Exception as e:
+        current_app.logger.exception(e)
+        return jsonify({'status':'error','message':'Database error.'}), 500
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    # 2) Préparer et enregistrer la demande (flow=change_email)
+    token      = gen_reset_token_opaque(24)
+    token_hash = hash_token(token)
+    expires_at = datetime.utcnow() + timedelta(minutes=30)
+    payload = {
+        "flow": "change_email",
+        "current_email": email,
+        "new_email": new_email,
+        "application": application
+    }
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        cnx = get_db_connection()
+        cur = cnx.cursor()
 
-        cursor.execute("SELECT password_hash FROM users WHERE email = %s and application = %s ", (email,))
-        user = cursor.fetchone()
-        if not user:
-            return jsonify({'status': 'error', 'message': 'User not found.'}), 404
+        # Annuler anciennes demandes PENDING pour ce current_email + flow
+        try:
+            # Annuler PENDING
+            cur.execute("""
+            UPDATE email_verifications
+                SET status='CANCELLED'
+            WHERE LOWER(email)=LOWER(%s)
+                AND status='PENDING'
+                AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.flow')) = 'change_email'
+            """, (email,))
+        except Exception:
+            # fallback si JSON_EXTRACT indispo
+            cur.execute("""
+              UPDATE email_verifications
+                 SET status='CANCELLED'
+               WHERE LOWER(email)=LOWER(%s) AND status='PENDING'
+            """, (email,))
 
-        hashed_password = user[0]
-        hashed_password = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
-
-        if not verify_password(password, hashed_password):
-            return jsonify({'status': 'error', 'message': 'Incorrect password.'}), 401
-
-        otp = str(random.randint(1000, 9999))
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-
-        # Stockage sécurisé côté serveur du OTP + new_email + expiration + tentative
-        otp_storage[email] = {
-            'otp': otp,
-            'new_email': new_email,
-            'expires_at': expires_at,
-            'attempts': 0
-        }
-
-        send_otp_email(new_email, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
-
-        return jsonify({'status': 'success', 'message': 'OTP sent to new email.'}), 200
-
-    except mysql.connector.Error as err:
-        print(f"Erreur base de données : {err}")
-        return jsonify({'status': 'error', 'message': f'Database error: {err}'}), 500
+        try:
+            # Purger USED/CANCELLED
+            cur.execute("""
+            DELETE FROM email_verifications
+            WHERE LOWER(email)=LOWER(%s)
+                AND status IN ('CANCELLED','USED')
+                AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.flow')) = 'change_email'
+            """, (email,))
+        except Exception:
+            cur.execute("""
+              DELETE FROM email_verifications
+               WHERE LOWER(email)=LOWER(%s) AND status IN ('CANCELLED','USED')
+            """, (email,))
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM email_verifications")
+        next_id = cur.fetchone()[0]
+        # Créer la nouvelle demande ; on met email = current_email comme clé
+        cur.execute("""
+          INSERT INTO email_verifications
+              (id, email, application, token_hash, payload_json, expires_at, created_ip, user_agent, status, created_at)
+          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'PENDING', NOW())
+        """, (next_id, email, application, token_hash, json.dumps(payload), expires_at,
+              request.remote_addr, request.headers.get("User-Agent","")))
+        cnx.commit()
+    except Exception as e:
+        current_app.logger.exception(e)
+        # Réponse neutre pour ne rien révéler
+        return jsonify({'status':'success','message':'If valid, a confirmation link was sent to the new email.'}), 200
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    # 3) Envoyer le lien au **nouvel** e-mail (c’est lui qui doit confirmer)
+    confirm_url = f"https://assistbyscan.com/verify?token={token}&flow=change_email"
+    try:
+        send_change_email_link(
+            to_email=new_email,
+            verify_url=confirm_url,
+            sender_email=current_app.config["EMAIL_SENDER"],
+            sender_password=current_app.config["EMAIL_PASSWORD"],
+            smtp_host=current_app.config["SMTP_HOST"],
+            smtp_port=current_app.config["SMTP_PORT"],
+            use_ssl=current_app.config["SMTP_USE_SSL"],
+        )
+    except Exception:
+        current_app.logger.exception("[MAIL] change_email send failed")
+
+    # Réponse neutre
+    return jsonify({'status':'success','message':'If valid, a confirmation link was sent to the new email.'}), 200
 
 
-@bp.route('/verify_change_email', methods=['POST'])
+@bp.post("/verify_change_email")
 def verify_change_email():
-    data = request.get_json()
-    otp = data.get('otp')
-    email = data.get('email')
-    application = data.get('application_name')
-    MAX_ATTEMPTS = 5
-    conn = None
-    cursor = None
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        return jsonify({'status':'error','message':'missing token'}), 400
 
-    if not email or not otp:
-        return jsonify({'status': 'error', 'message': 'Missing fields.'}), 400
-
-    record = otp_storage.get(email)
-    if not record:
-        return jsonify({'status': 'error', 'message': 'No OTP found for this user.'}), 404
-
-
-    if record['attempts'] >= MAX_ATTEMPTS:
-        del otp_storage[email]
-        return jsonify({'status': 'error', 'message': 'Too many attempts. OTP blocked.'}), 429
-
-    if datetime.utcnow() > record['expires_at']:
-        del otp_storage[email]
-        return jsonify({'status': 'error', 'message': 'OTP expired.'}), 400
-
-    if record['otp'] != otp:
-        record['attempts'] += 1
-        return jsonify({'status': 'error', 'message': 'Incorrect OTP.'}), 400
-
+    token_hash = hash_token(token)
+    now = datetime.utcnow()
 
     try:
-        new_email = record['new_email']
-        print(f"Changing email from {email} to {new_email}")
+        cnx = get_db_connection()
+        cur = cnx.cursor(dictionary=True)
+        cur.execute("""
+          SELECT id, email, application, payload_json, status, expires_at
+            FROM email_verifications
+           WHERE token_hash=%s
+           ORDER BY id DESC
+           LIMIT 1
+        """, (token_hash,))
+        row = cur.fetchone()
+        if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
+            return jsonify({'status':'error','message':'invalid_or_used'}), 401
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET email = %s WHERE email = %s and application = %s ", (new_email, email, application))
-        cursor.execute("""
-                UPDATE registred_users SET username = %s WHERE username = %s AND application = %s
-            """, (new_email, email, application))
-        conn.commit()
+        if now > row["expires_at"]:
+            cur2 = cnx.cursor()
+            cur2.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
+            cnx.commit()
+            cur2.close()
+            return jsonify({'status':'error','message':'expired'}), 410
 
-        del otp_storage[email]
+        payload      = json.loads(row["payload_json"])
+        if payload.get("flow") != "change_email":
+            return jsonify({'status':'error','message':'invalid_flow'}), 400
 
-        return jsonify({'status': 'success', 'message': 'Email changed successfully.'}), 200
+        current_email = payload["current_email"].strip().lower()
+        new_email     = payload["new_email"].strip().lower()
+        application   = payload.get("application") or row.get("application")
 
-    except mysql.connector.Error as err:
-        return jsonify({'status': 'error', 'message': f'Database error: {err}'}), 500
+        # Vérifier collision éventuelle: si new_email déjà utilisé sur la même application
+        cur.execute("""
+          SELECT 1 FROM users
+           WHERE LOWER(email)=LOWER(%s) AND LOWER(application)=LOWER(%s)
+           LIMIT 1
+        """, (new_email, application))
+        if cur.fetchone():
+            # conflit propre : on n'update pas, on marque USED pour ne pas réutiliser
+            cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s",
+                        (now, row["id"]))
+            cnx.commit()
+            return jsonify({'status':'error','message':'new_email_already_in_use'}), 409
+
+        # (si tu dois refléter ailleurs)
+        cur.execute("""
+          UPDATE registred_users
+             SET username=%s
+           WHERE username=%s AND LOWER(application)=LOWER(%s)
+        """, (new_email, current_email, application))
+
+        # Mettre à jour l'email principal
+        cur.execute("""
+          UPDATE users
+             SET email=%s
+           WHERE LOWER(email)=LOWER(%s) AND LOWER(application)=LOWER(%s)
+        """, (new_email, current_email, application))
+        affected = cur.rowcount
+
+        # Consommer le token
+        cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s",
+                    (now, row["id"]))
+        cnx.commit()
+
+        if affected == 0:
+            # pas d’update (compte introuvable à ce stade) → réponse neutre
+            return jsonify({'status':'success','message':'Email change processed.'}), 200
+
+        return jsonify({'status':'success','message':'Email changed successfully.'}), 200
+
+    except Exception as e:
+        current_app.logger.exception(e)
+        return jsonify({'status':'error','message':f'Database error: {str(e)}'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+
+@bp.post("/delete_account")
+def delete_account():
+    """
+    Étape 1 : l’utilisateur saisit email + password.
+    On vérifie le mot de passe, puis on crée une demande dans email_verifications
+    (flow=delete_account) avec un lien de confirmation.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    email       = (data.get("email") or "").strip().lower()
+    password    = (data.get("password") or "").strip()
+    application = (data.get("application_name") or "").strip()
+
+    # --- validations de base
+    if not email or not password or not application:
+        return jsonify({"status": "error",
+                        "message": "Email, password and application_name are required."}), 400
+    if not re.match(r"^[\w.+-]+@[\w-]+\.[\w.-]+$", email):
+        return jsonify({"status": "error",
+                        "message": "Invalid email format."}), 400
+
+    # --- vérifier le compte & le mot de passe (réponse neutre si email inconnu)
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+        cur.execute("""
+            SELECT password_hash
+              FROM users
+             WHERE LOWER(email)=LOWER(%s) AND LOWER(application)=LOWER(%s)
+             LIMIT 1
+        """, (email, application))
+        row = cur.fetchone()
+        if not row:
+            # réponse neutre pour ne rien révéler
+            return jsonify({"status": "success",
+                            "message": "If valid, a confirmation link was sent to your email."}), 200
+
+        stored_hash = row[0]
+        if isinstance(stored_hash, str):
+            stored_hash = stored_hash.encode("utf-8")
+        if not verify_password(password, stored_hash):
+            return jsonify({"status": "error", "message": "Incorrect password."}), 401
+    except Exception as e:
+        current_app.logger.exception(e)
+        return jsonify({"status": "error", "message": f"Database error: {e}"}), 500
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    # --- créer la demande dans email_verifications
+    token      = gen_reset_token_opaque(24)
+    token_hash = hash_token(token)
+    expires_at = datetime.utcnow() + timedelta(minutes=30)
+    payload = {
+        "flow": "delete_account",
+        "email": email,
+        "application": application
+    }
+
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor()
+
+        # annule anciennes demandes PENDING du même flow
+        cur.execute("""
+          UPDATE email_verifications
+             SET status='CANCELLED'
+           WHERE LOWER(email)=LOWER(%s)
+             AND status='PENDING'
+             AND JSON_EXTRACT(payload_json,'$.flow')='delete_account'
+        """, (email,))
+        # supprime anciens USED/CANCELLED pour éviter l’index unique
+        cur.execute("""
+          DELETE FROM email_verifications
+           WHERE LOWER(email)=LOWER(%s)
+             AND status IN ('CANCELLED','USED')
+             AND JSON_EXTRACT(payload_json,'$.flow')='delete_account'
+        """, (email,))
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM email_verifications")
+        next_id = cur.fetchone()[0]
+        # nouvel enregistrement
+        cur.execute("""
+          INSERT INTO email_verifications
+              (id, email, application, token_hash, payload_json,
+               expires_at, created_ip, user_agent, status, created_at)
+          VALUES (%s, %s,%s,%s,%s,%s,%s,%s,'PENDING',NOW())
+        """, (next_id, email, application, token_hash,
+              json.dumps(payload), expires_at,
+              request.remote_addr, request.headers.get("User-Agent","")))
+        cnx.commit()
+    except Exception as e:
+        current_app.logger.exception(e)
+        return jsonify({"status": "success",
+                        "message": "If valid, a confirmation link was sent to your email."}), 200
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+    # --- envoyer l’email avec lien de confirmation
+    confirm_url = f"https://assistbyscan.com/verify?token={token}&flow=delete_account"
+    try:
+        send_delete_account_email(
+            to_email=email,
+            verify_url=confirm_url,
+            sender_email=current_app.config["EMAIL_SENDER"],
+            sender_password=current_app.config["EMAIL_PASSWORD"],
+            smtp_host=current_app.config["SMTP_HOST"],
+            smtp_port=current_app.config["SMTP_PORT"],
+            use_ssl=current_app.config["SMTP_USE_SSL"],
+        )
+    except Exception:
+        current_app.logger.exception("[MAIL] delete_account send failed")
+
+    return jsonify({"status": "success",
+                    "message": "If valid, a confirmation link was sent to your email."}), 200
+
+
+@bp.post("/verify_delete_account")
+def verify_delete_account():
+    """
+    Étape 2 : confirmation via le lien reçu.
+    On consomme le token et supprime définitivement le compte.
+    """
+    data  = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        return jsonify({"status": "error", "message": "missing token"}), 400
+
+    token_hash = hash_token(token)
+    now = datetime.utcnow()
+
+    try:
+        cnx = get_db_connection()
+        cur = cnx.cursor(dictionary=True)
+        cur.execute("""
+          SELECT id, email, application, payload_json, status, expires_at
+            FROM email_verifications
+           WHERE token_hash=%s
+           ORDER BY id DESC LIMIT 1
+        """, (token_hash,))
+        row = cur.fetchone()
+        if not row or row["status"] in ("USED","CANCELLED","EXPIRED"):
+            return jsonify({"status": "error", "message": "invalid_or_used"}), 401
+
+        if now > row["expires_at"]:
+            cur.execute("UPDATE email_verifications SET status='EXPIRED' WHERE id=%s", (row["id"],))
+            cnx.commit()
+            return jsonify({"status": "error", "message": "expired"}), 410
+
+        payload     = json.loads(row["payload_json"])
+        if payload.get("flow") != "delete_account":
+            return jsonify({"status": "error", "message": "invalid_flow"}), 400
+
+        email       = payload["email"]
+        application = payload.get("application") or row.get("application")
+
+        # suppression de l’utilisateur
+        cur.execute("""
+          DELETE FROM users
+           WHERE LOWER(email)=LOWER(%s) AND LOWER(application)=LOWER(%s)
+        """, (email, application))
+        cur.execute("""
+          DELETE FROM registred_users
+           WHERE LOWER(email)=LOWER(%s) AND LOWER(application)=LOWER(%s)
+        """, (email, application))
+        affected = cur.rowcount
+
+        # consommer le token
+        cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s",
+                    (now, row["id"]))
+        cnx.commit()
+
+        if affected == 0:
+            # utilisateur déjà supprimé ou inexistant → réponse neutre
+            return jsonify({"status": "success", "message": "Account deletion processed."}), 200
+
+        return jsonify({"status": "success", "message": "Account successfully deleted."}), 200
+
+    except Exception as e:
+        current_app.logger.exception(e)
+        return jsonify({"status": "error", "message": f"Database error: {e}"}), 500
+    finally:
+        if cur: cur.close()
+        if cnx: cnx.close()
+
+
+
+
+
+
+
+
 
 
 @bp.route('/change_number', methods=['POST'])
@@ -1259,116 +1556,6 @@ def change_password():
             cursor.close()
             conn.close()
 
-
-@bp.route('/delete_account', methods=['POST'])
-def delete_account():
-    data = request.get_json()
-
-    if not data:
-        return jsonify({'status': 'error', 'message': 'No data received.'}), 400
-
-    email = data.get('email')
-    password = data.get('password')
-    application = data.get('application_name')
-    if not email or not password:
-        return jsonify({'status': 'error', 'message': 'Email and password are required.'}), 400
-
-    # Vérification format email
-    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
-    if not re.match(email_regex, email):
-        return jsonify({'status': 'error', 'message': 'Invalid email format.'}), 400
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email=%s AND application = %s ", (email, application))
-        user = cursor.fetchone()
-
-        if not user:
-            return jsonify({'status': 'error', 'message': "User not found."}), 404
-
-        hashed_password = user[2]  # Assurez-vous que c'est bien le champ du mot de passe
-        if isinstance(hashed_password, str):
-            hashed_password = hashed_password.encode('utf-8')
-
-        if not verify_password(password, hashed_password):
-            return jsonify({'status': 'error', 'message': "Incorrect password."}), 401
-
-        # Génération OTP
-        otp = str(random.randint(1000, 9999))
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-        otp_storage[email] = {
-            "email": email,
-            "otp": otp,
-            "expires_at": expires_at,
-            "attempts": 0
-        }
-
-        send_otp_email(email, otp, current_app.config['EMAIL_SENDER'], current_app.config['EMAIL_PASSWORD'])
-        return jsonify({"status": "success", "message": "OTP sent to your email.", "email": email}), 200
-
-    except mysql.connector.Error as err:
-        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Error: {str(e)}'}), 500
-    finally:
-        if conn:
-            cursor.close()
-            conn.close()
-
-
-@bp.route('/verify_delete_account', methods=['POST'])
-def verify_delete_account():
-    data = request.get_json()
-    otp = data.get('otp')
-    email = data.get('email')
-    application = data.get('application_name')
-
-    if not data or not otp or not email:
-        return jsonify({'status': 'error', 'message': 'OTP and email are required.'}), 400
-
-    record = otp_storage.get(email)
-    MAX_ATTEMPTS = 5
-
-    if not record:
-        return jsonify({'status': 'error', 'message': 'No OTP found for this user.'}), 404
-
-    if record['attempts'] >= MAX_ATTEMPTS:
-        del otp_storage[email]
-        return jsonify({'status': 'error', 'message': 'Too many attempts. OTP blocked.'}), 429
-
-    if datetime.utcnow() > record['expires_at']:
-        del otp_storage[email]
-        return jsonify({'status': 'error', 'message': 'OTP expired.'}), 400
-
-    if record['otp'] != otp:
-        record['attempts'] += 1
-        return jsonify({'status': 'error', 'message': 'Incorrect OTP.'}), 400
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT * FROM users WHERE email=%s AND application = %s ", (email, application))
-        user = cursor.fetchone()
-
-        if not user:
-            return jsonify({'status': 'error', 'message': "User not found."}), 404
-
-        cursor.execute("DELETE FROM users WHERE email=%s", (email,))
-        conn.commit()
-        del otp_storage[email]
-
-        return jsonify({'status': 'success', 'message': 'Account successfully deleted.'}), 200
-
-    except mysql.connector.Error as err:
-        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Error: {str(e)}'}), 500
-    finally:
-        if conn:
-            cursor.close()
-            conn.close()
 
 
 @bp.route('/add_qr', methods=['POST'])
