@@ -12,6 +12,8 @@ from mysql.connector.errors import IntegrityError
 import firebase_admin
 from firebase_admin import messaging, credentials
 from email.message import EmailMessage
+import uuid
+
 
 from flask import Blueprint, request, jsonify, current_app
 from .utils import (
@@ -2190,45 +2192,37 @@ def generate_qr():
     max_id_result = cursor.fetchone()
     current_id = max_id_result[0] or 0
 
-    # Get number of existing QR codes for this application
-    cursor.execute("SELECT COUNT(*) FROM qr_codes WHERE application = %s", (application,))
-    existing_count = cursor.fetchone()[0]
-
     output_folder = os.path.join(current_app.root_path, "static", "qr")
-    generated = 0
 
-    while generated < count:
-        index = existing_count + generated + 1
-        code, path = generate_qr_code(output_folder, application, index)
+    for _ in range(count):
+        # 1) Génère un code unique
+        code = str(uuid.uuid4())
 
-        try:
-            current_id += 1
+        # 2) Nom de fichier unique (plus d’index)
+        filename = f"{application}{current_id}_{code}.png"
 
-            cursor.execute("""
-                INSERT INTO qr_codes (id, qr_code, is_active, application, image_path)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (
-                current_id, code, 0, application,
-                f"/static/qr/{application}{index}.png"
-            ))
-            print(application)
-            conn.commit()
+        # 3) Payload encodé dans le QR (garde identique à ce que tu stockes en BDD)
+        payload = code  # ou f"https://assistbyscan.com/qr/{code}" si tu veux une URL
 
-            qr_list.append({
-                "id": current_id,
-                "code": code,
-                "image_path": f"/static/qr/{application}{index}.png"
-            })
-            generated += 1
+        # 4) Crée l'image
+        path = generate_qr_code(output_folder, application, payload, filename)
 
-        except mysql.connector.IntegrityError as e:
-            if e.errno == 1062:
-                current_id -= 1
-                continue
-            else:
-                cursor.close()
-                conn.close()
-                return jsonify({"error": f"Database error: {e}"}), 500
+        # 5) Insert (laisse MySQL gérer l'AUTO_INCREMENT)
+        current_id += 1
+        cursor.execute("""
+            INSERT INTO qr_codes (id, qr_code, is_active, application, image_path)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            current_id, code, 0, application,
+            f"/static/qr/{filename}"
+        ))
+        conn.commit()
+
+        qr_list.append({
+            "id": cursor.lastrowid,
+            "code": code,
+            "image_path": f"/static/qr/{filename}",
+        })
 
     cursor.close()
     conn.close()

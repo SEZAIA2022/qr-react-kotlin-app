@@ -133,7 +133,7 @@ const QrGenerator = ({ userEmail }) => {
                   </p>
 
                   <img
-                    src={`${process.env.REACT_APP_API_URL}${qr.image_path}`}
+                    src={`${process.env.REACT_APP_API_URL}${qr.image_path}?v=${qr.code}`}
                     alt={`QR code for ${qr.code}`}
                     width="150"
                     height="150"

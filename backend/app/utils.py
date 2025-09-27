@@ -489,18 +489,14 @@ def get_user_by_contact(data, application):
 
 
 
-def generate_qr_code(output_folder, application, index):
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    code = str(uuid.uuid4())  # Unique code stored in DB
-    filename = f"{application}{index}.png"  # File name: application1.png, application2.png, etc.
+def generate_qr_png(output_folder: str, payload: str, filename: str) -> str:
+    os.makedirs(output_folder, exist_ok=True)
     path = os.path.join(output_folder, filename)
-
-    img = qrcode.make(code)
+    img = qrcode.make(payload)
     img.save(path)
+    return path
 
-    return code, path
+
 
 
 
