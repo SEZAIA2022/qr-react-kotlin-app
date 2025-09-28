@@ -629,6 +629,23 @@ def _consume_email_verification(token: str):
               INSERT INTO users_web (id, email, password_hash, city, country, application, role, created_at, is_activated)
               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), 1)
             """, (next_id, email, pwd_hash, city_val, country_val, app_val, role_val))
+        # Récupérer le prochain id
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS new_id FROM static_pages")
+        new_id = cur.fetchone()["new_id"]
+
+        # Texte par défaut
+        default_text = "U can change it"
+
+        # Insertion avec placeholders
+        cur.execute(
+            """
+            INSERT INTO static_pages
+                (id, term_of_use, about_us, privacy_policy, application)
+            VALUES
+                (%s, %s, %s, %s, %s)
+            """,
+            (new_id, default_text, default_text, default_text, app_val)
+        )
 
         cur.execute("UPDATE email_verifications SET status='USED', used_at=%s WHERE id=%s", (now, row["id"]))
         cnx.commit()

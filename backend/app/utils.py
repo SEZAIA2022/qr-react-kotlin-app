@@ -489,12 +489,13 @@ def get_user_by_contact(data, application):
 
 
 
-def generate_qr_png(output_folder: str, payload: str, filename: str) -> str:
+def generate_qr_code(output_folder, application, code_payload: str, filename: str):
     os.makedirs(output_folder, exist_ok=True)
     path = os.path.join(output_folder, filename)
-    img = qrcode.make(payload)
+    img = qrcode.make(code_payload)
     img.save(path)
     return path
+
 
 
 
