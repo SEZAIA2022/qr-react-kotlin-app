@@ -471,22 +471,22 @@ def register():
         cur.execute("""
           UPDATE email_verifications
              SET status='CANCELLED'
-           WHERE email=%s AND status='PENDING'
-        """, (email,))
+           WHERE email=%s AND status='PENDING' AND application = %s
+        """, (email, application_name))
         # Nettoyer les anciennes lignes déjà traitées
         cur.execute("""
           DELETE FROM email_verifications
-           WHERE email=%s AND status IN ('CANCELLED','USED')
-        """, (email,))
+           WHERE email=%s AND status IN ('CANCELLED','USED') AND application = %s
+        """, (email, application_name))
         cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM email_verifications")
         next_id = cur.fetchone()[0]
         # Créer la nouvelle demande
     
         cur.execute("""
           INSERT INTO email_verifications
-              (id, email, token_hash, payload_json, expires_at, created_ip, user_agent, status, created_at)
-          VALUES (%s, %s, %s, %s, %s, %s, %s, 'PENDING', NOW())
-        """, (next_id, email, token_hash, json.dumps(payload), expires_at,
+              (id, email, application, token_hash, payload_json, expires_at, created_ip, user_agent, status, created_at)
+          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'PENDING', NOW())
+        """, (next_id, email, application_name, token_hash, json.dumps(payload), expires_at,
               request.remote_addr, request.headers.get("User-Agent","")))
         cnx.commit()
     finally:
@@ -595,8 +595,8 @@ def _consume_email_verification(token: str):
             cur.execute("""
                 UPDATE email_verifications
                    SET status='USED', used_at=%s
-                 WHERE id=%s
-            """, (now, row["id"]))
+                 WHERE id=%s and application=%s
+            """, (now, row["id"], payload.get("application")))
 
             cnx.commit()
             return {"status":"success",

@@ -6,7 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 const UserRegister = () => {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
-  const [role, setRole] = useState('');
+  const [role, setRole] = useState('user'); // par défaut
   const [application, setApplication] = useState('');
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState([]);
@@ -19,68 +19,50 @@ const UserRegister = () => {
     setApplication(storedApp);
   }, []);
 
-  // Charger la liste des utilisateurs
   useEffect(() => {
     const fetchUsers = async () => {
       try {
         if (!application) return;
-        console.log(application);
         const response = await axios.get(
           `${process.env.REACT_APP_API_URL}/api/get_users`,
-          { params: { application } }   
+          { params: { application } }
         );
-
-        if (response.data.success) {
-          setUsers(response.data.users);
-        } else {
-          toast.error('Failed to load users.');
-        }
-      } catch (error) {
+        if (response.data.success) setUsers(response.data.users);
+        else toast.error('Failed to load users.');
+      } catch {
         toast.error('Error fetching users.');
       }
     };
     fetchUsers();
-  }, [refreshUsers, application]); 
-
+  }, [refreshUsers, application]);
 
   const handleSubmit = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     if (!email || !username || !role || !application) {
       toast.error('All fields are required.');
       return;
     }
-
     if (!emailRegex.test(email)) {
       toast.error('Please enter a valid email address.');
       return;
     }
-
     setLoading(true);
-
     try {
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/register_user`, {
-        email,
-        username,
-        role,
-        application,
+        email, username, role, application,
       });
-
       if (response.data.success) {
         toast.success(response.data.message || '✅ User registered successfully.');
         setEmail('');
         setUsername('');
-        setRole('');
-        setRefreshUsers(prev => !prev); // Rafraîchir la liste des utilisateurs
+        setRole('user');
+        setRefreshUsers(prev => !prev);
       } else {
         toast.error(response.data.message || 'Registration error.');
       }
     } catch (error) {
-      if (error.response && error.response.data && error.response.data.message) {
-        toast.error(error.response.data.message);
-      } else {
-        toast.error('❌ Registration failed. Please try again.');
-      }
+      if (error.response?.data?.message) toast.error(error.response.data.message);
+      else toast.error('❌ Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -88,16 +70,15 @@ const UserRegister = () => {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
-
     try {
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/delete_user`, { id });
       if (response.data.success) {
         toast.success(response.data.message || 'User deleted successfully.');
-        setRefreshUsers(prev => !prev); // Rafraîchir la liste après suppression
+        setRefreshUsers(prev => !prev);
       } else {
         toast.error(response.data.message || 'Failed to delete user.');
       }
-    } catch (error) {
+    } catch {
       toast.error('Error deleting user.');
     }
   };
@@ -108,10 +89,7 @@ const UserRegister = () => {
 
       <form
         style={formStyle}
-        onSubmit={e => {
-          e.preventDefault();
-          if (!loading) handleSubmit();
-        }}
+        onSubmit={e => { e.preventDefault(); if (!loading) handleSubmit(); }}
         noValidate
       >
         <input
@@ -165,15 +143,14 @@ const UserRegister = () => {
             <tr>
               <th style={thStyle}>Email</th>
               <th style={thStyle}>Username</th>
-              <th style={thStyle}>Application</th>
               <th style={thStyle}>Role</th>
-              <th style={thStyle}>Actions</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '15px' }}>
+                <td colSpan="4" style={{ textAlign: 'center', padding: '15px' }}>
                   No users found.
                 </td>
               </tr>
@@ -182,9 +159,8 @@ const UserRegister = () => {
                 <tr key={user.id}>
                   <td style={tdStyle}>{user.email}</td>
                   <td style={tdStyle}>{user.username}</td>
-                  <td style={tdStyle}>{user.application}</td>
                   <td style={tdStyle}>{user.role}</td>
-                  <td style={tdStyle}>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
                     <button
                       onClick={() => handleDelete(user.id)}
                       style={deleteButtonStyle}
@@ -205,14 +181,13 @@ const UserRegister = () => {
 };
 
 // Styles
-
 const responsiveWrapperStyle = {
   width: '100%',
   overflowX: 'auto',
 };
 
 const containerStyle = {
-  maxWidth: '800px',
+  maxWidth: '900px',
   margin: '30px auto 40px',
   padding: '20px',
   backgroundColor: '#f1f9f9',
@@ -283,6 +258,8 @@ const tableStyle = {
   width: '100%',
   borderCollapse: 'collapse',
   marginTop: '10px',
+  tableLayout: 'fixed',
+  wordBreak: 'break-word',
 };
 
 const thStyle = {
@@ -295,6 +272,8 @@ const thStyle = {
 const tdStyle = {
   borderBottom: '1px solid #ddd',
   padding: '10px',
+  textAlign: 'left',
+  verticalAlign: 'middle',
 };
 
 const deleteButtonStyle = {
