@@ -2146,7 +2146,7 @@ def get_repair_by_qrcode_full():
                     if row.get('hour_slot') else None
                 ),
                 'status': row.get('status'),
-                'description_problem': row.get('description_problem'),
+                'description_probleme': row.get('description_probleme'),
                 'user_tech': row.get('user_tech'),
                 'address': full_address
             }
