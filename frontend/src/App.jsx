@@ -8,6 +8,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
+import './style.css';
 
 import Toolbar from './components/Toolbar';
 import QuestionForm from './components/QuestionForm';

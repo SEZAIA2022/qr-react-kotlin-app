@@ -7,19 +7,15 @@ const ForgetPassword = () => {
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
-
-  // ⏱️ état pour le timer
   const [cooldown, setCooldown] = useState(0);
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // Décrémentation automatique du timer
+  // Timer de cooldown pour éviter le spam
   useEffect(() => {
     let interval;
     if (cooldown > 0) {
-      interval = setInterval(() => {
-        setCooldown((prev) => prev - 1);
-      }, 1000);
+      interval = setInterval(() => setCooldown(prev => prev - 1), 1000);
     }
     return () => clearInterval(interval);
   }, [cooldown]);
@@ -42,41 +38,40 @@ const ForgetPassword = () => {
     try {
       await axios.post('/api/password/forgot', { email });
       setMessage('If the account exists, a reset email has been sent.');
-      setCooldown(30); // ✅ 30 secondes avant de pouvoir recliquer
-    } catch (err) {
+      setCooldown(30);
+    } catch {
       setMessage('If the account exists, a reset email has been sent.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div style={containerStyle}>
-      <h2>Forgot Password</h2>
-      {message && <p style={messageStyle}>{message}</p>}
+  const isError = /invalid|required/i.test(message);
+  const messageClass = isError ? 'message message--error' : 'message message--info';
 
-      <form onSubmit={handleSubmit} style={formStyle}>
+  return (
+    <div className="container--sm card card--panel">
+      <h2 className="title" style={{ marginBottom: 12 }}>Forgot Password</h2>
+
+      {message && <p className={messageClass}>{message}</p>}
+
+      <form onSubmit={handleSubmit} className="form">
         <input
           type="text"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={inputStyle}
+          className="input"
         />
+
         {fieldErrors.email && (
-          <p style={{ color: 'red', fontSize: '13px', marginTop: '-10px' }}>
-            {fieldErrors.email}
-          </p>
+          <p className="error-text">{fieldErrors.email}</p>
         )}
 
         <button
           type="submit"
           disabled={loading || cooldown > 0}
-          style={{
-            ...buttonStyle,
-            backgroundColor: loading || cooldown > 0 ? '#6c757d' : '#007bff',
-            cursor: loading || cooldown > 0 ? 'not-allowed' : 'pointer',
-          }}
+          className={`btn btn-lg ${loading || cooldown > 0 ? 'btn--muted' : ''}`}
         >
           {loading
             ? 'Sending…'
@@ -86,43 +81,11 @@ const ForgetPassword = () => {
         </button>
       </form>
 
-      <p style={{ marginTop: '10px' }}>
+      <p className="mt-10">
         Remember your password? <Link to="/login">Login</Link>
       </p>
     </div>
   );
 };
-
-// Styles
-const containerStyle = {
-  maxWidth: '400px',
-  margin: 'auto',
-  padding: '20px',
-  backgroundColor: '#f9faff',
-  borderRadius: '8px',
-  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-};
-const formStyle = { display: 'flex', flexDirection: 'column', gap: '15px' };
-const inputStyle = {
-  padding: '10px',
-  fontSize: '16px',
-  borderRadius: '8px',
-  border: '1.5px solid #ccc',
-  fontFamily: 'inherit',
-  width: '100%',
-  boxSizing: 'border-box',
-};
-const buttonStyle = {
-  backgroundColor: '#007bff',
-  color: '#fff',
-  fontWeight: 'bold',
-  border: 'none',
-  padding: '12px',
-  borderRadius: '8px',
-  cursor: 'pointer',
-  fontSize: '16px',
-};
-const messageStyle = { color: 'green', fontWeight: 'bold' };
 
 export default ForgetPassword;

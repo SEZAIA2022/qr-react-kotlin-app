@@ -6,7 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 const UserRegister = () => {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
-  const [role, setRole] = useState('user'); // par défaut
+  const [role, setRole] = useState('user');
   const [application, setApplication] = useState('');
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState([]);
@@ -84,11 +84,11 @@ const UserRegister = () => {
   };
 
   return (
-    <div style={containerStyle}>
-      <h2 style={{ marginBottom: '20px' }}>Add a user</h2>
+    <div className="container--md card card--panel">
+      <h2 className="title">Add a user</h2>
 
       <form
-        style={formStyle}
+        className="form"
         onSubmit={e => { e.preventDefault(); if (!loading) handleSubmit(); }}
         noValidate
       >
@@ -97,7 +97,7 @@ const UserRegister = () => {
           placeholder="Email"
           value={email}
           onChange={e => setEmail(e.target.value)}
-          style={inputStyle}
+          className="input"
           required
           autoComplete="email"
         />
@@ -107,16 +107,16 @@ const UserRegister = () => {
           placeholder="Username"
           value={username}
           onChange={e => setUsername(e.target.value)}
-          style={inputStyle}
+          className="input"
           required
           autoComplete="username"
         />
 
-        <fieldset style={fieldsetStyle}>
-          <legend style={legendStyle}>Select a role:</legend>
-          <div style={radioGroupStyle}>
+        <fieldset className="fieldset">
+          <legend className="legend">Select a role:</legend>
+          <div className="radio-group">
             {roles.map(r => (
-              <label key={r} style={radioLabelStyle}>
+              <label key={r} className="radio-label">
                 <input
                   type="radio"
                   name="role"
@@ -131,39 +131,40 @@ const UserRegister = () => {
           </div>
         </fieldset>
 
-        <button type="submit" disabled={loading} style={buttonStyle}>
+        <button type="submit" disabled={loading} className={`btn btn-lg ${loading ? 'btn--muted' : ''}`}>
           {loading ? 'Registering...' : 'Register'}
         </button>
       </form>
 
-      <h2 style={{ margin: '40px 0 20px' }}>Users List</h2>
-      <div style={responsiveWrapperStyle}>
-        <table style={tableStyle}>
+      <h2 className="title mt-20">Users List</h2>
+
+      <div className="table-responsive">
+        <table className="table">
           <thead>
             <tr>
-              <th style={thStyle}>Email</th>
-              <th style={thStyle}>Username</th>
-              <th style={thStyle}>Role</th>
-              <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
+              <th>Email</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th className="text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan="4" style={{ textAlign: 'center', padding: '15px' }}>
+                <td colSpan="4" className="text-center" style={{ padding: '15px' }}>
                   No users found.
                 </td>
               </tr>
             ) : (
               users.map(user => (
                 <tr key={user.id}>
-                  <td style={tdStyle}>{user.email}</td>
-                  <td style={tdStyle}>{user.username}</td>
-                  <td style={tdStyle}>{user.role}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  <td>{user.email}</td>
+                  <td>{user.username}</td>
+                  <td>{user.role}</td>
+                  <td className="text-center">
                     <button
                       onClick={() => handleDelete(user.id)}
-                      style={deleteButtonStyle}
+                      className="btn btn--danger btn--sm"
                       title="Delete user"
                     >
                       Delete
@@ -175,115 +176,10 @@ const UserRegister = () => {
           </tbody>
         </table>
       </div>
+
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar />
     </div>
   );
-};
-
-// Styles
-const responsiveWrapperStyle = {
-  width: '100%',
-  overflowX: 'auto',
-};
-
-const containerStyle = {
-  maxWidth: '900px',
-  margin: '30px auto 40px',
-  padding: '20px',
-  backgroundColor: '#f1f9f9',
-  borderRadius: '10px',
-  boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-  textAlign: 'center',
-  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-};
-
-const formStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '15px',
-  alignItems: 'center',
-};
-
-const inputStyle = {
-  width: '80%',
-  padding: '12px 14px',
-  fontSize: '16px',
-  borderRadius: '8px',
-  border: '1.5px solid #ccc',
-  outlineColor: '#007bff',
-  boxSizing: 'border-box',
-};
-
-const fieldsetStyle = {
-  border: 'none',
-  padding: 0,
-  margin: 0,
-  width: '80%',
-  textAlign: 'left',
-};
-
-const legendStyle = {
-  fontWeight: '600',
-  marginBottom: '8px',
-  fontSize: '16px',
-};
-
-const radioGroupStyle = {
-  display: 'flex',
-  gap: '30px',
-};
-
-const radioLabelStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  fontSize: '16px',
-  cursor: 'pointer',
-};
-
-const buttonStyle = {
-  padding: '12px 25px',
-  fontSize: '16px',
-  borderRadius: '8px',
-  border: 'none',
-  backgroundColor: '#007bff',
-  color: '#fff',
-  cursor: 'pointer',
-  transition: 'background-color 0.3s',
-  fontWeight: '600',
-  width: '50%',
-  minWidth: '150px',
-};
-
-const tableStyle = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  marginTop: '10px',
-  tableLayout: 'fixed',
-  wordBreak: 'break-word',
-};
-
-const thStyle = {
-  borderBottom: '2px solid #007bff',
-  padding: '10px',
-  textAlign: 'left',
-  backgroundColor: '#e6f0ff',
-};
-
-const tdStyle = {
-  borderBottom: '1px solid #ddd',
-  padding: '10px',
-  textAlign: 'left',
-  verticalAlign: 'middle',
-};
-
-const deleteButtonStyle = {
-  backgroundColor: '#dc3545',
-  color: '#fff',
-  border: 'none',
-  padding: '6px 12px',
-  borderRadius: '5px',
-  cursor: 'pointer',
-  fontWeight: '600',
 };
 
 export default UserRegister;

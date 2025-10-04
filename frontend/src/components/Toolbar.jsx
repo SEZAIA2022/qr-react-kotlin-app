@@ -1,27 +1,11 @@
 import React from 'react';
 
 const Toolbar = ({ userApplication }) => {
-  const toolbarStyle = {
-    width: '100%',
-    backgroundColor: '#007bff',
-    color: '#fff',
-    padding: '15px 20px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-    position: 'sticky',
-    top: 0,
-    zIndex: 1000,
-    boxSizing: 'border-box',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontSize: '24px',
-    fontWeight: 'bold',
-    userSelect: 'none',
-  };
-
   return (
-    <div style={toolbarStyle}>
-      {userApplication ? `${userApplication}` : 'SEZAIA REPAIR'}
+    <div className="toolbar toolbar--header">
+      <span className="toolbar__title">
+        {userApplication ? userApplication : 'SEZAIA REPAIR'}
+      </span>
     </div>
   );
 };

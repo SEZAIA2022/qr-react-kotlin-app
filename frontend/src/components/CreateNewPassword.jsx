@@ -20,16 +20,12 @@ const CreateNewPassword = () => {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(true);
 
-  // Endpoints selon la source :
-  // - web (par défaut) => anciens endpoints
-  // - app              => nouveaux endpoints
   const VERIFY_URL = mode === 'app' ? '/api/verify_forget' : '/api/password/verify';
   const RESET_URL  = mode === 'app' ? '/api/change-password' : '/api/password/reset';
 
   const validatePassword = (pwd) =>
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(pwd);
 
-  // Vérifier le token au montage (affiche le formulaire si OK)
   useEffect(() => {
     if (!token) {
       toast.error('Lien de réinitialisation manquant. Merci d’utiliser le lien reçu par e-mail.');
@@ -39,7 +35,6 @@ const CreateNewPassword = () => {
     (async () => {
       try {
         const res = await axios.post(VERIFY_URL, { token });
-        // /verify_forget → { ok: true } ; /password/verify → { ok: true }
         if (res.status === 200 && (res.data?.ok || res.data?.status === 'success')) {
           setVerifying(false);
         } else {
@@ -73,10 +68,8 @@ const CreateNewPassword = () => {
 
       if (res.status === 200) {
         if (mode === 'app') {
-          // 🔁 Flux mobile → aller sur la page de succès au même style
           navigate('/password-success', { replace: true });
         } else {
-          // 🌐 Flux web → comportement existant
           toast.success(res.data?.message || 'Mot de passe mis à jour. Redirection…');
           setTimeout(() => navigate('/login', { replace: true }), 1500);
         }
@@ -86,13 +79,10 @@ const CreateNewPassword = () => {
     } catch (err) {
       const code = err?.response?.data?.error || err?.response?.data?.message;
       const friendly =
-        code === 'weak_password'
-          ? "Mot de passe trop faible."
-          : code === 'password_mismatch'
-          ? 'Les mots de passe ne correspondent pas.'
-          : code === 'expired'
-          ? 'Le lien a expiré. Demandez un nouveau lien.'
-          : 'Erreur serveur.';
+        code === 'weak_password' ? 'Mot de passe trop faible.' :
+        code === 'password_mismatch' ? 'Les mots de passe ne correspondent pas.' :
+        code === 'expired' ? 'Le lien a expiré. Demandez un nouveau lien.' :
+        'Erreur serveur.';
       toast.error(friendly);
     } finally {
       setLoading(false);
@@ -100,70 +90,64 @@ const CreateNewPassword = () => {
   };
 
   return (
-    <div style={containerStyle}>
-      <h2>Créer un nouveau mot de passe</h2>
+    <div className="container--sm card card--panel">
+      <h2 className="title" style={{ marginBottom: 12 }}>Créer un nouveau mot de passe</h2>
 
       {verifying ? (
-        <p>Vérification du lien…</p>
+        <p className="message message--info">Vérification du lien…</p>
       ) : (
-        <form onSubmit={handleSubmit} style={formStyle}>
-          <div style={{ position: 'relative' }}>
+        <form onSubmit={handleSubmit} className="form">
+          <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
               placeholder="Nouveau mot de passe"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              style={{ ...inputStyle, paddingRight: '40px' }}
+              className="input input--with-eye"
               required
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              style={eyeButtonStyle}
+              onClick={() => setShowPassword(v => !v)}
+              className="eye-btn"
               aria-label={showPassword ? 'Masquer' : 'Afficher'}
             >
               {showPassword ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
 
-          <div style={{ position: 'relative' }}>
+          <div className="relative">
             <input
               type={showConfirmPassword ? 'text' : 'password'}
               placeholder="Confirmer le mot de passe"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              style={{ ...inputStyle, paddingRight: '40px' }}
+              className="input input--with-eye"
               required
             />
             <button
               type="button"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              style={eyeButtonStyle}
+              onClick={() => setShowConfirmPassword(v => !v)}
+              className="eye-btn"
               aria-label={showConfirmPassword ? 'Masquer' : 'Afficher'}
             >
               {showConfirmPassword ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
 
-          <button type="submit" disabled={loading} style={buttonStyle}>
+          <button type="submit" disabled={loading} className="btn btn-lg">
             {loading ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </form>
       )}
 
-      <p style={{ marginTop: '10px' }}>
+      <p className="mt-10">
         Vous vous en souvenez ? <Link to="/login">Se connecter</Link>
       </p>
+
       <ToastContainer position="top-center" autoClose={4000} />
     </div>
   );
 };
-
-// Styles (inchangés)
-const containerStyle = { maxWidth: '400px', margin: 'auto', padding: '20px', backgroundColor: '#f9faff', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" };
-const formStyle = { display: 'flex', flexDirection: 'column', gap: '15px' };
-const inputStyle = { padding: '10px', fontSize: '16px', borderRadius: '8px', border: '1.5px solid #ccc', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
-const eyeButtonStyle = { position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px' };
-const buttonStyle = { backgroundColor: '#007bff', color: '#fff', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' };
 
 export default CreateNewPassword;

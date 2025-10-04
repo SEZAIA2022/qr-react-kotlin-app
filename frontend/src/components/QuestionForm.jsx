@@ -25,7 +25,9 @@ const QuestionForm = () => {
   // Fetch questions
   const fetchQuestions = async () => {
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`, { params: { application } });
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/questions`, {
+        params: { application },
+      });
       if (Array.isArray(res.data)) {
         setQuestions(res.data);
       } else if (res.data?.questions && Array.isArray(res.data.questions)) {
@@ -42,10 +44,6 @@ const QuestionForm = () => {
       setMessage('❌ Failed to load questions.');
     }
   };
-
-  useEffect(() => {
-    fetchQuestions();
-  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -79,7 +77,7 @@ const QuestionForm = () => {
   const deleteSelected = async () => {
     const idsToDelete = Object.entries(selected)
       .filter(([_, isChecked]) => isChecked)
-      .map(([id]) => Number(id)); // Convertir en nombre
+      .map(([id]) => Number(id));
 
     if (idsToDelete.length === 0) {
       setMessage('Please select at least one question to delete.');
@@ -144,44 +142,40 @@ const QuestionForm = () => {
     }
   };
 
+  const msgErr = /^❌|failed|error/i.test(message);
+  const msgClass = msgErr ? 'message message--error' : 'message message--success';
+
   return (
-    <div style={containerStyle}>
-      <h2>Add a Question</h2>
-      <form onSubmit={handleSubmit} style={formStyle}>
+    <div className="container card card--panel">
+      <h2 className="title">Add a Question</h2>
+
+      <form onSubmit={handleSubmit} className="form">
         <textarea
           rows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Write your question here..."
-          style={textareaStyle}
+          className="textarea"
           required
         />
-        <button type="submit" style={buttonStyle}>Add</button>
+        <button type="submit" className="btn btn--success">Add</button>
       </form>
 
-      <h2 style={{ marginTop: '40px' }}>Questions List</h2>
-      {message && <p style={messageStyle}>{message}</p>}
+      <h2 className="title mt-20">Questions List</h2>
+      {message && <p className={msgClass}>{message}</p>}
 
-      <button
-        onClick={deleteSelected}
-        style={{ ...buttonStyle, marginBottom: '15px', backgroundColor: '#dc3545' }}
-      >
+      <button onClick={deleteSelected} className="btn btn--danger mt-10">
         Delete Selected
       </button>
 
-      <ul style={listStyle}>
+      <ul className="list mt-10">
         {questions.map(({ id, text }) => (
-          <li
-            key={id}
-            style={listItemStyle}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f5ff'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
+          <li key={id} className="list-item">
             <input
               type="checkbox"
               checked={!!selected[id]}
               onChange={() => toggleSelect(id)}
-              style={checkboxStyle}
+              className="checkbox"
               aria-label={`Select question ${id}`}
             />
 
@@ -191,20 +185,20 @@ const QuestionForm = () => {
                   rows={2}
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
-                  style={textareaEditStyle}
+                  className="textarea-inline"
                 />
-                <button onClick={saveEdit} style={iconButtonBase} aria-label="Save">💾</button>
-                <button onClick={cancelEditing} style={iconButtonBase} aria-label="Cancel">✖️</button>
+                <button onClick={saveEdit} className="icon-btn" aria-label="Save">💾</button>
+                <button onClick={cancelEditing} className="icon-btn" aria-label="Cancel">✖️</button>
               </>
             ) : (
               <>
-                <span style={questionTextStyle}>{text}</span>
-                <button onClick={() => startEditing(id, text)} style={iconButtonBase} aria-label="Edit">✏️</button>
+                <span className="q-text">{text}</span>
+                <button onClick={() => startEditing(id, text)} className="icon-btn" aria-label="Edit">✏️</button>
                 <button
                   onClick={() => {
                     if (window.confirm('Delete this question?')) deleteQuestion(id);
                   }}
-                  style={iconButtonBase}
+                  className="icon-btn"
                   aria-label="Delete"
                 >
                   🗑️
@@ -216,108 +210,6 @@ const QuestionForm = () => {
       </ul>
     </div>
   );
-};
-
-// 🎨 Styles CSS-in-JS (inchangés)
-const containerStyle = {
-  maxWidth: '600px',
-  margin: '20px auto',
-  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-  padding: '20px',
-  backgroundColor: '#f9faff',
-  borderRadius: '8px',
-  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-};
-
-const formStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '15px',
-};
-
-const textareaStyle = {
-  padding: '10px',
-  fontSize: '16px',
-  borderRadius: '8px',
-  border: '1.5px solid #ccc',
-  resize: 'vertical',
-  minHeight: '100px',
-  fontFamily: 'inherit',
-};
-
-const buttonStyle = {
-  backgroundColor: '#007bff',
-  color: '#fff',
-  fontWeight: 'bold',
-  border: 'none',
-  padding: '12px',
-  borderRadius: '8px',
-  cursor: 'pointer',
-  fontSize: '16px',
-  transition: 'background-color 0.3s',
-};
-
-const messageStyle = {
-  fontWeight: 'bold',
-  color: '#333',
-};
-
-const listStyle = {
-  listStyleType: 'none',
-  padding: 0,
-  maxHeight: '350px',
-  overflowY: 'auto',
-  borderTop: '2px solid #007bff',
-  borderRadius: '0 0 8px 8px',
-  boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.05)',
-  backgroundColor: '#ffffff',
-};
-
-const listItemStyle = {
-  padding: '12px 15px',
-  borderBottom: '1px solid #e1e7f0',
-  display: 'flex',
-  alignItems: 'center',
-  cursor: 'default',
-  transition: 'background-color 0.25s ease',
-};
-
-const checkboxStyle = {
-  marginRight: '15px',
-  width: '20px',
-  height: '20px',
-  cursor: 'pointer',
-};
-
-const questionTextStyle = {
-  flex: 1,
-  fontSize: '16px',
-  color: '#2c3e50',
-  userSelect: 'none',
-};
-
-const textareaEditStyle = {
-  padding: '8px',
-  fontSize: '15px',
-  borderRadius: '6px',
-  border: '1.5px solid #007bff',
-  boxShadow: '0 0 8px rgba(0,123,255,0.2)',
-  resize: 'vertical',
-  minHeight: '60px',
-  marginRight: '12px',
-  flex: 1,
-  fontFamily: 'inherit',
-};
-
-const iconButtonBase = {
-  backgroundColor: 'transparent',
-  border: 'none',
-  cursor: 'pointer',
-  fontSize: '22px',
-  padding: '6px 10px',
-  color: '#007bff',
-  borderRadius: '6px',
-  transition: 'background-color 0.3s, color 0.3s',
 };
 
 export default QuestionForm;

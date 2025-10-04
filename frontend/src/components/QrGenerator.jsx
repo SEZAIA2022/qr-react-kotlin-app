@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const QrGenerator = ({ userEmail }) => {
+const QrGenerator = () => {
   const [count, setCount] = useState(1);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [role, setRole] = useState("");
-  const [application, setApplication] = useState("");
+  const [errorMsg, setErrorMsg] = useState('');
+  const [role, setRole] = useState('');
+  const [application, setApplication] = useState('');
 
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState([]);
@@ -23,49 +23,47 @@ const QrGenerator = ({ userEmail }) => {
   const generateQR = async () => {
     const numCount = parseInt(count, 10);
     if (isNaN(numCount) || numCount < 1) {
-      setErrorMsg("Please enter a valid number (≥ 1).");
+      setErrorMsg('Please enter a valid number (≥ 1).');
       return;
     }
 
-    setErrorMsg("");
+    setErrorMsg('');
     setLoading(true);
     setResults([]);
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, {
         count: numCount,
-        application: application
+        application,
       });
       setResults(res.data);
       setShowHistory(false);
     } catch (error) {
-      console.error("Error generating QR codes:", error);
-      setErrorMsg("Error generating QR codes. Please try again.");
+      setErrorMsg('Error generating QR codes. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const fetchHistory = async () => {
-    setErrorMsg("");
+    setErrorMsg('');
     setLoadingHistory(true);
     try {
       const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/qr_history`, {
-        params: { application }
+        params: { application },
       });
       setHistory(res.data.data || []);
       setShowHistory(true);
       setResults([]);
     } catch (error) {
-      console.error("Error fetching QR code history:", error);
-      setErrorMsg("Error fetching QR code history. Please try again.");
+      setErrorMsg('Error fetching QR code history. Please try again.');
     } finally {
       setLoadingHistory(false);
     }
   };
 
   const printQRCode = (qr) => {
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
+    const win = window.open('', '_blank');
+    win.document.write(`
       <html>
         <head><title>Print QR Code</title></head>
         <body style="text-align:center; font-family: Arial;">
@@ -74,74 +72,75 @@ const QrGenerator = ({ userEmail }) => {
         </body>
       </html>
     `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
   };
 
-  return (
-    <div style={containerStyle}>
-      <h2 style={{ marginBottom: '20px' }}>QR Code Generator</h2>
+  const msgClass = errorMsg ? 'message message--error' : 'message message--info';
 
-      <div style={{ marginBottom: '20px' }}>
+  return (
+    <div className="container--md card card--panel">
+      <h2 className="title">QR Code Generator</h2>
+
+      {/* Switcher Generate / History */}
+      <div className="segmented mt-10">
         <button
+          className={`segmented__btn ${!showHistory ? 'active' : ''}`}
           onClick={() => setShowHistory(false)}
-          style={{ ...buttonStyle, marginRight: '10px', backgroundColor: showHistory ? '#6c757d' : '#007bff' }}
         >
           Generate QR Codes
         </button>
         <button
+          className={`segmented__btn ${showHistory ? 'active' : ''}`}
           onClick={fetchHistory}
-          style={{ ...buttonStyle, backgroundColor: showHistory ? '#007bff' : '#6c757d' }}
           disabled={loadingHistory}
         >
-          {loadingHistory ? "Loading..." : "View History"}
+          {loadingHistory ? 'Loading...' : 'View History'}
         </button>
       </div>
 
       {!showHistory && (
         <>
-          <div style={inputContainerStyle}>
+          <div className="qr-inputrow">
             <input
               type="number"
               min="1"
               value={count}
-              onChange={e => setCount(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => setCount(e.target.value)}
+              className="input qr-inputrow__field"
               aria-label="Number of QR codes to generate"
             />
             <button
               onClick={generateQR}
               disabled={loading}
-              style={buttonStyle}
+              className={`btn btn-lg ${loading ? 'btn--muted' : ''}`}
               aria-busy={loading}
             >
-              {loading ? "Generating..." : "Generate"}
+              {loading ? 'Generating...' : 'Generate'}
             </button>
           </div>
 
-          {errorMsg && <p style={errorStyle}>{errorMsg}</p>}
-          {loading && <p style={loadingStyle}>Generation in progress… ⏳</p>}
+          {errorMsg && <p className={msgClass}>{errorMsg}</p>}
+          {loading && <p className="message message--info">Generation in progress… ⏳</p>}
 
           {results.length > 0 && (
-            <div style={resultsContainerStyle}>
-              {results.map(qr => (
-                <div key={qr.code} style={qrItemStyle}>
-                  <p style={{ fontWeight: '600', marginBottom: '8px' }}>
-                    {qr.image_path.split('/').pop()}
-                  </p>
+            <div className="results">
+              {results.map((qr) => (
+                <div key={qr.code} className="qr-item">
+                  <p className="qr-name">{qr.image_path.split('/').pop()}</p>
 
                   <img
                     src={`${process.env.REACT_APP_API_URL}${qr.image_path}?v=${qr.code}`}
                     alt={`QR code for ${qr.code}`}
                     width="150"
                     height="150"
-                    style={qrImageStyle}
-                    onLoad={e => e.currentTarget.classList.add('loaded')}
+                    className="qr-image img-fade"
+                    onLoad={(e) => e.currentTarget.classList.add('loaded')}
                   />
                   <button
-                    style={downloadBtnStyle}
+                    className="download-btn"
                     onClick={() => {
                       const link = document.createElement('a');
                       link.href = `${process.env.REACT_APP_API_URL}${qr.image_path}`;
@@ -162,16 +161,18 @@ const QrGenerator = ({ userEmail }) => {
 
       {showHistory && (
         <>
-          {errorMsg && <p style={errorStyle}>{errorMsg}</p>}
-          {loadingHistory && <p style={loadingStyle}>Loading history… ⏳</p>}
+          {errorMsg && <p className={msgClass}>{errorMsg}</p>}
+          {loadingHistory && <p className="message message--info">Loading history… ⏳</p>}
+          {!loadingHistory && history.length === 0 && (
+            <p className="message message--info">No QR codes in history.</p>
+          )}
 
-          {history.length === 0 && !loadingHistory && <p>No QR codes in history.</p>}
-
-          <div style={resultsContainerStyle}>
-            {history.map(qr => (
-              <div key={qr.code} style={qrItemStyle}>
-                <p style={{ fontWeight: '600', marginBottom: '8px' }}>
-                    {qr.image_path.split('/').pop()} — <span style={{ color: qr.status === 'active' ? 'green' : 'red' }}>
+          <div className="results">
+            {history.map((qr) => (
+              <div key={qr.code} className="qr-item">
+                <p className="qr-name">
+                  {qr.image_path.split('/').pop()} —{' '}
+                  <span className={`status ${qr.status === 'active' ? 'status--ok' : 'status--warn'}`}>
                     {qr.status}
                   </span>
                 </p>
@@ -181,13 +182,10 @@ const QrGenerator = ({ userEmail }) => {
                   alt={`QR code for ${qr.code}`}
                   width="150"
                   height="150"
-                  style={qrImageStyle}
-                  onLoad={e => e.currentTarget.classList.add('loaded')}
+                  className="qr-image img-fade"
+                  onLoad={(e) => e.currentTarget.classList.add('loaded')}
                 />
-                <button
-                  style={downloadBtnStyle}
-                  onClick={() => printQRCode(qr)}
-                >
+                <button className="download-btn" onClick={() => printQRCode(qr)}>
                   Print
                 </button>
               </div>
@@ -195,109 +193,8 @@ const QrGenerator = ({ userEmail }) => {
           </div>
         </>
       )}
-
-      <style>{`
-        img {
-          opacity: 0;
-          transition: opacity 0.4s ease-in;
-        }
-        img.loaded {
-          opacity: 1;
-        }
-      `}</style>
     </div>
   );
-};
-
-// Styles
-const containerStyle = {
-  maxWidth: '650px',
-  margin: '30px auto 40px',
-  padding: '20px',
-  backgroundColor: '#f9faff',
-  borderRadius: '10px',
-  boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-  textAlign: 'center',
-  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-};
-
-const inputContainerStyle = {
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  gap: '12px',
-  marginBottom: '15px',
-};
-
-const inputStyle = {
-  width: '90px',
-  padding: '8px 12px',
-  fontSize: '16px',
-  borderRadius: '8px',
-  border: '1.5px solid #ccc',
-  textAlign: 'center',
-  outlineColor: '#007bff',
-};
-
-const buttonStyle = {
-  padding: '9px 18px',
-  fontSize: '16px',
-  borderRadius: '8px',
-  border: 'none',
-  backgroundColor: '#007bff',
-  color: '#fff',
-  cursor: 'pointer',
-  transition: 'background-color 0.3s',
-  fontWeight: '600',
-};
-
-const errorStyle = {
-  color: '#d9534f',
-  fontWeight: '600',
-  marginBottom: '15px',
-};
-
-const loadingStyle = {
-  color: '#555',
-  fontStyle: 'italic',
-  marginTop: '10px',
-};
-
-const resultsContainerStyle = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  justifyContent: 'center',
-  gap: '25px',
-  marginTop: '25px',
-};
-
-const qrItemStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  minWidth: '150px',
-  padding: '15px',
-  backgroundColor: '#ffffff',
-  borderRadius: '10px',
-  boxShadow: '0 1px 6px rgba(0,0,0,0.1)',
-};
-
-const qrImageStyle = {
-  border: '1.5px solid #ccc',
-  borderRadius: '12px',
-  marginBottom: '10px',
-};
-
-const downloadBtnStyle = {
-  padding: '7px 16px',
-  fontSize: '14px',
-  backgroundColor: '#007bff',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '8px',
-  cursor: 'pointer',
-  transition: 'background-color 0.3s',
-  fontWeight: '600',
 };
 
 export default QrGenerator;

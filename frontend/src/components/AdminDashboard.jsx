@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const AdminDashboard = ({ userEmail }) => {
+const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,7 +18,7 @@ const AdminDashboard = ({ userEmail }) => {
       } else {
         setError('Error fetching users.');
       }
-    } catch (err) {
+    } catch {
       setError('Network or server error.');
     } finally {
       setLoading(false);
@@ -35,49 +35,51 @@ const AdminDashboard = ({ userEmail }) => {
       } else {
         alert(res.data.message || 'Error deleting user.');
       }
-    } catch (err) {
+    } catch {
       alert('Network or server error.');
     }
   };
 
   return (
-    <div style={containerStyle}>
-      <h1>Admin Dashboard</h1>
-      
+    <div className="container--xl card card--panel">
+      <h1 className="title" style={{ marginBottom: 20 }}>Admin Dashboard</h1>
+
       {loading ? (
-        <p>Loading users...</p>
+        <p className="message message--info">Loading users...</p>
       ) : error ? (
-        <p style={{ color: 'red' }}>{error}</p>
+        <p className="message message--error">{error}</p>
       ) : (
-        <div style={responsiveWrapperStyle}>
-          <table style={tableStyle}>
+        <div className="table-responsive">
+          <table className="table">
             <thead>
               <tr>
-                <th style={thStyle}>ID</th>
-                <th style={thStyle}>Application</th>
-                <th style={thStyle}>Email</th>
-                <th style={thStyle}>City</th>
-                <th style={thStyle}>Country</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Role</th>
-                <th style={thStyle}>QR Code Count</th>
-                <th style={thStyle}>Actions</th>
+                <th>ID</th>
+                <th>Application</th>
+                <th>Email</th>
+                <th>City</th>
+                <th>Country</th>
+                <th>Status</th>
+                <th>Role</th>
+                <th>QR Code Count</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {users.map((user, index) => (
                 <tr key={user.id}>
-                  <td style={tdStyle}>{index + 1}</td> 
-                  <td style={tdStyle}>{user.application}</td>
-                  <td style={tdStyle}>{user.email}</td>
-                  <td style={tdStyle}>{user.city || '-'}</td>
-                  <td style={tdStyle}>{user.country || '-'}</td>
-                  <td style={tdStyle}> {user.is_activated === 1 ? 'Activated' : 'Not activated' || '-'}</td>
-                  <td style={tdStyle}>{user.role}</td>
-                  <td style={tdStyle}>{user.qrcode_count}</td>
-                  <td style={tdStyle}>
-                    <button 
-                      style={deleteBtnStyle} 
+                  <td>{index + 1}</td>
+                  <td>{user.application}</td>
+                  <td>{user.email}</td>
+                  <td>{user.city || '-'}</td>
+                  <td>{user.country || '-'}</td>
+                  <td>
+                    {user.is_activated === 1 ? 'Activated' : 'Not activated'}
+                  </td>
+                  <td>{user.role}</td>
+                  <td>{user.qrcode_count}</td>
+                  <td>
+                    <button
+                      className="btn btn--danger btn--sm"
                       onClick={() => handleDelete(user.id)}
                     >
                       Delete
@@ -91,47 +93,6 @@ const AdminDashboard = ({ userEmail }) => {
       )}
     </div>
   );
-};
-
-// Styles
-const responsiveWrapperStyle = {
-  width: '100%',
-  overflowX: 'auto',
-};
-const containerStyle = {
-  maxWidth: '900px',
-  margin: '40px auto',
-  padding: '20px',
-  backgroundColor: '#eef2ff',
-  borderRadius: '8px',
-  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-};
-
-const tableStyle = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  marginTop: '20px',
-};
-
-const thStyle = {
-  borderBottom: '2px solid #007bff',
-  textAlign: 'left',
-  padding: '10px',
-  backgroundColor: '#d6e0ff',
-};
-
-const tdStyle = {
-  borderBottom: '1px solid #ccc',
-  padding: '10px',
-};
-
-const deleteBtnStyle = {
-  backgroundColor: '#dc3545',
-  color: 'white',
-  border: 'none',
-  padding: '6px 10px',
-  borderRadius: '4px',
-  cursor: 'pointer',
 };
 
 export default AdminDashboard;
