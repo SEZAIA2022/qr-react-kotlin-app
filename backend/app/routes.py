@@ -3067,7 +3067,7 @@ def get_all_users():
 def user_register_web():
     data = request.json
     email = data.get('email')
-    application = (data.get('application_name') or '').strip().lower()
+    application = (data.get('application') or '').strip().lower()
     role = data.get('role')
 
     if not email or not role or not application:
