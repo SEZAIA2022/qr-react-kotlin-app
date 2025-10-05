@@ -79,7 +79,9 @@ def login():
 
     username = data.get('username')
     password = data.get('password')
-    application = data.get('application_name')
+    # récupère, gère None, enlève les espaces, force en minuscule
+    application = (data.get('application_name') or '').strip().lower()
+
     token = data.get('token')  # On récupère le token ici
 
     if not username or not password:
@@ -162,7 +164,9 @@ def register_token():
         return jsonify({"error": "Data is required"}), 400
 
     username = data.get('username')
-    application = data.get('application_name')
+    
+    application = (data.get('application_name') or '').strip().lower()
+
     token = data.get('token')
 
     if not all([username, application, token]):
@@ -199,7 +203,7 @@ def logout():
         return jsonify({'status': 'error', 'message': "No data received."}), 400
 
     username = data.get('username')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
 
     if not username or not application:
         return jsonify({'status': 'error', 'message': 'Username and application name are required.'}), 400
@@ -248,7 +252,7 @@ def notify_admin():
     message_text = data.get('message', 'New notification')
     role = data.get('role')
     email = data.get('email')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
 
     if not all([role, email, application]):
         return jsonify({"error": "'role', 'email', and 'application_name' fields are required"}), 400
@@ -312,7 +316,7 @@ def notify_admin():
 def get_nearest_admin_email():
     data = request.get_json()
     email = data.get('email')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
     date = data.get('date')          # format "YYYY-MM-DD"
     hour_slot = data.get('hour_slot') # format "HH:mm"
 
@@ -695,7 +699,7 @@ def email_verify_register():
 def forgot_password():
     data = request.get_json(force=True, silent=True) or {}
     email = (data.get("email") or "").strip().lower()
-    application = (data.get("application_name") or "").strip()
+    application = (data.get('application_name') or '').strip().lower()
 
     # Réponse neutre (pas d’info-leak) si email/application manquants
     if not email or not application:
@@ -934,7 +938,7 @@ def send_ask_and_response():
         date_str = data.get('date')  # ex: "Tuesday, 03 June 16:50"
         comment = data.get('comment')
         qr_code = data.get('qr_code')
-        application = data.get('application_name')
+        application = (data.get('application_name') or '').strip().lower()
         responses = data.get('responses')  # liste de dicts: [{'question_id':1, 'response':'Yes'}, ...]
         technician_email = data.get('technician_email')
         print (data)
@@ -1008,7 +1012,7 @@ def change_username():
     new_username = data.get('new_username')
     username = data.get('username')
     password = data.get('password')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
 
     if not username or not password or not new_username:
         return jsonify({'status': 'error', 'message': 'All champs requis'}), 400
@@ -1053,7 +1057,7 @@ def change_email():
     email       = (data.get('email') or '').strip().lower()
     new_email   = (data.get('new_email') or '').strip().lower()
     password    = (data.get('password') or '').strip()
-    application = (data.get('application_name') or '').strip()
+    application = (data.get('application_name') or '').strip().lower()
 
     # validations basiques (réponse neutre sur le résultat final)
     if not email or not new_email or not password or not application:
@@ -1272,7 +1276,7 @@ def delete_account():
     data = request.get_json(force=True, silent=True) or {}
     email       = (data.get("email") or "").strip().lower()
     password    = (data.get("password") or "").strip()
-    application = (data.get("application_name") or "").strip()
+    application = (data.get('application_name') or '').strip().lower()
 
     # --- validations de base
     if not email or not password or not application:
@@ -1465,7 +1469,7 @@ def change_number():
     code = data.get('code')
     new_code = data.get('new_code')
     password = data.get('password')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
     if not phone or not password or not new_phone or not code or not new_code:
         return jsonify({'status': 'error', 'message': 'All champs requis'}), 400
     try:
@@ -1515,7 +1519,7 @@ def change_password():
     # Extraction des champs
     email = data.get('email')
     password = data.get('password')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
     new_password = data.get('new_password')
     confirm_new_password = data.get('confirm_new_password')
 
@@ -1644,7 +1648,7 @@ def exist_qr():
     username = data.get('username')
     role = data.get('role')
     qr_code = data.get('qr_code')
-    application = data.get('application_name')
+    application = (data.get('application_name') or '').strip().lower()
 
     if not qr_code:
         return jsonify({'status': 'error', 'message': 'QR code is required.'}), 400
@@ -1729,7 +1733,7 @@ from datetime import datetime
 @bp.route('/ask_repair', methods=['GET'])
 def ask_repair():
     username = request.args.get('username')
-    application = request.args.get('application') 
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1809,7 +1813,7 @@ def send_email():
 @bp.route('/taken_slots', methods=['GET'])  # Tu fais un GET maintenant
 def get_taken_slots():
     user = request.args.get('user')
-    application = request.args.get('application')
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     if not user or not application:
         return jsonify({'status': 'error', 'message': 'User and application parameters are required'}), 400
     try:
@@ -1935,7 +1939,7 @@ def cancel_appointment():
 
 @bp.route('/get_qrcodes', methods=['GET'])
 def get_qrcodes():
-    application = request.args.get('application')
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     connection = None
     cursor = None
     try:
@@ -2198,7 +2202,7 @@ def format_phone():
 def generate_qr():
     data = request.get_json()
     count = int(data.get("count", 1))
-    application = data.get("application", "")
+    application = (data.get('application_name') or '').strip().lower()
     qr_list = []
 
     conn = get_db_connection()
@@ -2251,7 +2255,7 @@ def generate_qr():
 def add_question():
     data = request.get_json()
     text = data.get("text", "")
-    application = data.get("application", "")
+    application = (data.get('application_name') or '').strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -2277,7 +2281,7 @@ def add_question():
 
 @bp.route('/questions', methods=['GET'])  # utilisé par l'application mobile Kotlin
 def get_questions():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
 
     try:
         conn = get_db_connection()
@@ -2370,7 +2374,7 @@ def update_question(question_id):
 # 📘 GET: Récupérer le champ about_us
 @bp.route('/about_us', methods=['GET'])
 def get_about_us():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -2388,7 +2392,7 @@ def get_about_us():
 # ✏️ PUT: Modifier le champ about_us
 @bp.route('/about_us', methods=['PUT'])
 def update_about_us():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     data = request.get_json()
     new_text = data.get('about_us', '').strip()
 
@@ -2409,7 +2413,7 @@ def update_about_us():
 # 📘 GET: Récupérer le champ term_of_use
 @bp.route('/term_of_use', methods=['GET'])
 def get_term_of_use():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT term_of_use FROM static_pages WHERE application = %s LIMIT 1", (application, ))
@@ -2427,7 +2431,7 @@ def get_term_of_use():
 def update_term_of_use():
     data = request.get_json()
     new_text = data.get('term_of_use', '').strip()
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
 
     if not new_text:
         return jsonify({"error": "Text is required"}), 400
@@ -2445,7 +2449,7 @@ def update_term_of_use():
 # 📘 GET: Récupérer le champ privacy_policy
 @bp.route('/privacy_policy', methods=['GET'])
 def get_privacy_policy():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT privacy_policy FROM static_pages WHERE application = %s LIMIT 1", (application, ))
@@ -2461,7 +2465,7 @@ def get_privacy_policy():
 # ✏️ PUT: Modifier le champ privacy_policy
 @bp.route('/privacy_policy', methods=['PUT'])
 def update_privacy_policy():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     data = request.get_json()
     new_text = data.get('privacy_policy', '').strip()
 
@@ -2480,7 +2484,7 @@ def update_privacy_policy():
 # 📘 GET : récupérer toutes les tâches help (id, title_help, help)
 @bp.route('/help_tasks', methods=['GET'])
 def get_help_tasks():
-    application = request.args.get('application')  # Récupère le paramètre ?application=...
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -2535,7 +2539,7 @@ def add_help_task():
     data = request.get_json()
     title_help = data.get('title_help', '').strip()
     help_text = data.get('help', '').strip()
-    application = data.get('application', '')
+    application = (data.get('application_name') or '').strip().lower()
     if not title_help or not help_text:
         return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
 
@@ -2984,7 +2988,7 @@ def register_user():
 
 @bp.route('/qr_history', methods=['GET'])
 def qr_history():
-    application = request.args.get('application')
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     conn = None
     cursor = None
     try:
@@ -3063,7 +3067,7 @@ def get_all_users():
 def user_register_web():
     data = request.json
     email = data.get('email')
-    application = data.get('application')
+    application = (data.get('application_name') or '').strip().lower()
     role = data.get('role')
 
     if not email or not role or not application:
@@ -3131,7 +3135,7 @@ def delete_user_web(user_id):
 
 @bp.route('/get_users', methods=['GET'])
 def get_users():
-    application = request.args.get('application')
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
     print(application)
 
     if not application:
