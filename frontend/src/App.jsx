@@ -132,7 +132,7 @@ function App() {
       <Toolbar userApplication={userApplication} />
 
       <NavBar isAuthenticated={isAuthenticated} onLogout={handleLogout} />
-      <main style={mainStyle}>
+      <main className="app-main">
         <Routes>
           <Route
             path="/"
@@ -224,7 +224,7 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
     .includes(location.pathname);
 
   return (
-    <nav style={navStyle}>
+    <nav className="app-nav">
       {isAuthenticated ? (
         isAdminSection ? (
           <>
@@ -361,22 +361,7 @@ const CustomLink = ({ to, active, children }) => {
   );
 };
 
-const navStyle = {
-  padding: '10px',
-  textAlign: 'center',
-  backgroundColor: '#f0f4ff',
-  boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-  marginBottom: '20px',
-};
 
-const mainStyle = {
-  padding: '20px',
-  maxWidth: '800px',
-  margin: '0 auto',
-  backgroundColor: '#fff',
-  borderRadius: '8px',
-  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-  minHeight: '70vh',
-};
+
 
 export default AppWrapper;
