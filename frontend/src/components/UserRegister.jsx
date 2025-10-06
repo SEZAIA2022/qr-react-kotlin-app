@@ -3,16 +3,22 @@ import axios from 'axios';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+const rolesUI = ['technicien', 'client']; // affichage
+
+// mapping UI -> API
+const mapRoleToApi = (r) => (r === 'technicien' ? 'admin' : 'user');
+// mapping API -> UI pour l’affichage de la liste
+const prettyRole = (r) => (r === 'admin' ? 'Technicien' : r === 'user' ? 'Client' : r);
+
 const UserRegister = () => {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
-  const [role, setRole] = useState('user');
+  // valeur UI (technicien/client)
+  const [roleUI, setRoleUI] = useState('technicien');
   const [application, setApplication] = useState('');
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState([]);
   const [refreshUsers, setRefreshUsers] = useState(false);
-
-  const roles = ['admin', 'user'];
 
   useEffect(() => {
     const storedApp = localStorage.getItem('userApplication') || '';
@@ -38,7 +44,7 @@ const UserRegister = () => {
 
   const handleSubmit = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !username || !role || !application) {
+    if (!email || !username || !roleUI || !application) {
       toast.error('All fields are required.');
       return;
     }
@@ -46,6 +52,8 @@ const UserRegister = () => {
       toast.error('Please enter a valid email address.');
       return;
     }
+
+    const role = mapRoleToApi(roleUI); // <-- envoie admin/user
     setLoading(true);
     try {
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/register_user`, {
@@ -55,7 +63,7 @@ const UserRegister = () => {
         toast.success(response.data.message || '✅ User registered successfully.');
         setEmail('');
         setUsername('');
-        setRole('user');
+        setRoleUI('technicien'); // reset UI
         setRefreshUsers(prev => !prev);
       } else {
         toast.error(response.data.message || 'Registration error.');
@@ -115,17 +123,19 @@ const UserRegister = () => {
         <fieldset className="fieldset">
           <legend className="legend">Select a role:</legend>
           <div className="radio-group">
-            {roles.map(r => (
+            {rolesUI.map(r => (
               <label key={r} className="radio-label">
                 <input
                   type="radio"
                   name="role"
                   value={r}
-                  checked={role === r}
-                  onChange={e => setRole(e.target.value)}
+                  checked={roleUI === r}
+                  onChange={e => setRoleUI(e.target.value)}
                   required
                 />
-                <span style={{ marginLeft: 6, textTransform: 'capitalize' }}>{r}</span>
+                <span style={{ marginLeft: 6, textTransform: 'capitalize' }}>
+                  {r}
+                </span>
               </label>
             ))}
           </div>
@@ -148,7 +158,7 @@ const UserRegister = () => {
               <th className="text-center">Actions</th>
             </tr>
           </thead>
-          <tbody>
+            <tbody>
             {users.length === 0 ? (
               <tr>
                 <td colSpan="4" className="text-center" style={{ padding: '15px' }}>
@@ -160,7 +170,7 @@ const UserRegister = () => {
                 <tr key={user.id}>
                   <td>{user.email}</td>
                   <td>{user.username}</td>
-                  <td>{user.role}</td>
+                  <td>{prettyRole(user.role)}</td> {/* admin/user -> Technicien/Client */}
                   <td className="text-center">
                     <button
                       onClick={() => handleDelete(user.id)}
