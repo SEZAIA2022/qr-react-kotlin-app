@@ -312,74 +312,167 @@ def notify_admin():
 
 
 
+from datetime import datetime, timedelta, time, date as date_cls
+
+SLOT_START = 8   # 08:00
+SLOT_END   = 18  # 18:00 inclus
+SLOT_STEP_HOURS = 2
+MAX_SCAN_DAYS = 14  # on scanne jusqu'à 2 semaines
+STATUS_BUSY = ('processing',)  # statuts qui bloquent un créneau
+
+def _normalize(s):
+    return (s or '').strip().lower()
+
+def _time_to_str(t: time) -> str:
+    return f"{t.hour:02d}:{t.minute:02d}"
+
+def _round_to_next_slot(dt: datetime) -> time:
+    """
+    Aligne à la grille 08,10,12,14,16,18 — prend le prochain slot >= dt.time(),
+    sinon passe au lendemain 08:00.
+    """
+    # Liste des slots horaires
+    slots = [time(h, 0) for h in range(SLOT_START, SLOT_END + 1, SLOT_STEP_HOURS)]
+    # Si on est avant le premier slot du jour, on prend celui-là
+    for sl in slots:
+        if dt.time() <= sl:
+            return sl
+    # sinon, on repousse au lendemain 08:00
+    return time(SLOT_START, 0)
+
+def _iter_future_slots(start_dt: datetime):
+    """
+    Génère (date_str, hour_slot) à partir de start_dt, sur une grille de 2h,
+    en avançant jour par jour si nécessaire (max MAX_SCAN_DAYS).
+    """
+    current_date = start_dt.date()
+    current_slot = _round_to_next_slot(start_dt)
+    days_scanned = 0
+
+    while days_scanned <= MAX_SCAN_DAYS:
+        # Grille du jour courant
+        day_slots = [time(h, 0) for h in range(SLOT_START, SLOT_END + 1, SLOT_STEP_HOURS)]
+
+        # Si on commence en milieu de journée, ne proposer que les slots >= current_slot
+        for sl in day_slots:
+            if days_scanned > 0 or sl >= current_slot:
+                yield (current_date.isoformat(), _time_to_str(sl))
+
+        # jour suivant
+        current_date = current_date + timedelta(days=1)
+        current_slot = time(SLOT_START, 0)
+        days_scanned += 1
+
 @bp.route('/get_nearest_admin_email', methods=['POST'])
 def get_nearest_admin_email():
-    data = request.get_json()
-    email = data.get('email')
-    application = (data.get('application_name') or '').strip().lower()
-    date = data.get('date')          # format "YYYY-MM-DD"
-    hour_slot = data.get('hour_slot') # format "HH:mm"
+    data = request.get_json(silent=True) or {}
+    email = _normalize(data.get('email'))
+    application = _normalize(data.get('application_name'))
+    date_param = (data.get('date') or '').strip()       # optionnel
+    hour_slot = (data.get('hour_slot') or '').strip()   # optionnel
 
-    if not (email and application and date and hour_slot):
-        return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
+    if not email:
+        return jsonify({'status': 'error', 'message': 'Email is required'}), 400
 
+    conn = cursor = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)  # important : dict cursor
+        cursor = conn.cursor(dictionary=True)
 
-        # Étape 1 : récupérer les infos du user
-        cursor.execute("""
-            SELECT city
-            FROM users
-            WHERE email = %s AND application = %s AND role = 'user'
-        """, (email, application))
+        # 1) Récupérer infos utilisateur + déduire l'application si manquante
+        if application:
+            cursor.execute("""
+                SELECT city, application
+                FROM users
+                WHERE email=%s AND application=%s AND role='user'
+                LIMIT 1
+            """, (email, application))
+        else:
+            cursor.execute("""
+                SELECT city, application
+                FROM users
+                WHERE email=%s AND role='user'
+                ORDER BY id DESC
+                LIMIT 1
+            """, (email,))
         user_info = cursor.fetchone()
-
         if not user_info:
-            return jsonify({'status': 'error', 'message': 'Utilisateur non trouvé ou rôle invalide.'}), 404
+            return jsonify({'status':'error','message':'User not found or invalid role'}), 404
 
-        city = user_info['city']
+        city = (user_info.get('city') or '').strip()
+        application = _normalize(application or user_info.get('application'))
+        if not application:
+            return jsonify({'status':'error','message':'Application could not be determined'}), 400
 
-        # Étape 2 : chercher admin avec adresse exacte
+        # 2) Liste des techniciens (admins) dans la même ville + app
         cursor.execute("""
             SELECT username, email
             FROM users
-            WHERE role = 'admin' AND city = %s AND application = %s
+            WHERE role='admin' AND city=%s AND application=%s
+            ORDER BY id ASC
         """, (city, application))
         technicians = cursor.fetchall()
-
         if not technicians:
-            return jsonify({'status': 'error', 'message': 'No technicians found'}), 404
+            return jsonify({'status':'error','message':'No technicians found'}), 404
 
-        # Trouver les techniciens déjà pris à cette date et créneau
-        cursor.execute("""
-            SELECT user_tech FROM ask_repair
-            WHERE date = %s AND hour_slot = %s AND application = %s AND status = 'processing'
-        """, (date, hour_slot, application))
-        taken_techs = set(row['user_tech'] for row in cursor.fetchall())
+        # 3) Si l'appelant fournit un créneau, on garde l’ancien comportement
+        if date_param and hour_slot:
+            cursor.execute("""
+                SELECT user_tech
+                FROM ask_repair
+                WHERE date=%s AND hour_slot=%s AND application=%s AND status IN (%s)
+            """ % ("%s", "%s", "%s", ",".join(["%s"] * len(STATUS_BUSY))),
+            (date_param, hour_slot, application, *STATUS_BUSY))
+            taken = {row['user_tech'] for row in cursor.fetchall()}
 
-        # Trouver un technicien libre (premier non pris)
-        free_tech = None
-        for tech in technicians:
-            if tech['username'] not in taken_techs:
-                free_tech = tech
-                break
+            for tech in technicians:
+                if tech['username'] not in taken:
+                    return jsonify({
+                        'status':'success',
+                        'email': tech['email'],
+                        'application': application,
+                        'date': date_param,
+                        'hour_slot': hour_slot
+                    })
 
-        if free_tech:
-            return jsonify({'status': 'success', 'email': free_tech['email']})
-        else:
-            return jsonify({'status': 'error', 'message': 'No available technicians at this slot'}), 409
+            return jsonify({'status':'error','message':'No available technicians at this slot'}), 409
 
+        # 4) Sinon : calculer le prochain créneau >= maintenant + 2h,
+        #    puis scanner les slots (2h) des prochains jours jusqu’à MAX_SCAN_DAYS.
+        now = datetime.now() + timedelta(hours=2)
+        for d_str, slot in _iter_future_slots(now):
+            # techniciens déjà pris sur ce créneau
+            cursor.execute("""
+                SELECT user_tech
+                FROM ask_repair
+                WHERE date=%s AND hour_slot=%s AND application=%s AND status IN (%s)
+            """ % ("%s", "%s", "%s", ",".join(["%s"] * len(STATUS_BUSY))),
+            (d_str, slot, application, *STATUS_BUSY))
+            busy = {row['user_tech'] for row in cursor.fetchall()}
+
+            # premier admin libre
+            for tech in technicians:
+                if tech['username'] not in busy:
+                    return jsonify({
+                        'status':'success',
+                        'email': tech['email'],
+                        'application': application,
+                        'date': d_str,
+                        'hour_slot': slot
+                    })
+
+        # rien trouvé dans la fenêtre
+        return jsonify({'status':'error','message':'No free technician in the next days'}), 409
 
     except Exception as e:
         print(f"Error in /get_nearest_admin_email: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
+        return jsonify({'status':'error','message':'Server error'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        try:
+            if cursor: cursor.close()
+            if conn and getattr(conn, "is_connected", lambda: False)(): conn.close()
+        except Exception:
+            pass
 
 
 
@@ -928,6 +1021,145 @@ def change_password_forget():
         if cnx: cnx.close()
 
 
+@bp.route('/send_ask_direct', methods=['POST'])
+def send_ask_direct():
+    conn = None
+    cursor = None
+    try:
+        data = request.get_json(force=True) or {}
+        username = (data.get('username') or '').strip()
+        comment = (data.get('comment') or '').strip()
+        qr_id = (data.get('qr_id') or '').strip()
+        application = (data.get('application_name') or '').strip().lower()
+        technician_email = (data.get('technician_email') or '').strip().lower()
+
+        # optionnels : si non fournis, on calcule
+        req_date = (data.get('date') or '').strip()       # "YYYY-MM-DD"
+        req_slot = (data.get('hour_slot') or '').strip()  # "HH:mm"
+
+        if not all([username, comment, qr_id, application, technician_email]):
+            return jsonify({'status': 'error', 'message': 'Missing data'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # 1) QR -> qr_code
+        cursor.execute(
+            "SELECT qr_code FROM qr_codes WHERE qr_id = %s AND application = %s",
+            (qr_id, application)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'status': 'error', 'message': 'QR code not found'}), 404
+        qr_code = row['qr_code']
+
+        # 2) email tech -> username tech
+        cursor.execute(
+            "SELECT username FROM users WHERE email = %s AND application = %s",
+            (technician_email, application)
+        )
+        tech = cursor.fetchone()
+        if not tech:
+            return jsonify({'status': 'error', 'message': 'Technician not found'}), 404
+        user_tech = tech['username']
+
+        # 3) déterminer date / slot (si manquants)
+        if not req_date or not req_slot:
+            calc_date, calc_slot = _compute_next_slot()
+        else:
+            calc_date, calc_slot = req_date, req_slot
+
+        # 4) insertion (ajoute date, hour_slot, status)
+        cursor = conn.cursor()  # simple tuple cursor pour lastrowid
+        cursor.execute(
+            """
+            INSERT INTO ask_repair (username, comment, qr_code, user_tech, application, date, hour_slot, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'processing')
+            """,
+            (username, comment, qr_code, user_tech, application, calc_date, calc_slot)
+        )
+        ask_repair_id = cursor.lastrowid
+        conn.commit()
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Request repair sent successfully',
+            'ask_repair_id': ask_repair_id,
+            'date': calc_date,
+            'hour_slot': calc_slot
+        }), 200
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"Error in /send_ask_direct: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        try:
+            if cursor: cursor.close()
+            if conn: conn.close()
+        except Exception:
+            pass
+
+
+def _compute_next_slot():
+    """Retourne (date_str 'YYYY-MM-DD', hour_slot 'HH:mm') >= maintenant+2h,
+    arrondi sur créneaux de 2h (08:00..18:00), sinon passe au prochain jour ouvré."""
+    from datetime import datetime, timedelta, time
+
+    # base = maintenant + 2h
+    now = datetime.now()
+    base = now + timedelta(hours=2)
+
+    # si < 08:00 => 08:00, si > 18:00 => lendemain 08:00
+    start = time(8, 0)
+    end = time(18, 0)
+
+    # passe au prochain jour ouvré si week-end
+    def is_weekend(dt):
+        return dt.weekday() >= 5  # 5=Sam, 6=Dim
+
+    # avance au jour ouvré si besoin
+    while is_weekend(base):
+        base = (base + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+
+    # cadre horaire
+    if base.time() < start:
+        base = base.replace(hour=8, minute=0, second=0, microsecond=0)
+    elif base.time() > end:
+        # prochain jour ouvré à 08:00
+        base = (base + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+        while is_weekend(base):
+            base = (base + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+
+    # arrondi au prochain créneau 2h : 08:00, 10:00, 12:00, 14:00, 16:00, 18:00
+    hour = base.hour
+    minute = 0
+    # prochaine borne paire >= heure courante (en gardant le cadre)
+    slot_hours = [8,10,12,14,16,18]
+    next_h = None
+    for h in slot_hours:
+        # si base est déjà après h:min pile, on va au suivant
+        if base.hour < h or (base.hour == h and base.minute == 0 and base.second == 0):
+            if base.hour == h and base.minute == 0 and base.second == 0:
+                next_h = h
+            else:
+                next_h = h
+            break
+    if next_h is None:
+        # plus de slot aujourd'hui -> demain 08:00 (jour ouvré)
+        base = (base + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+        while is_weekend(base):
+            base = (base + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+        next_h = 8
+
+    base = base.replace(hour=next_h, minute=minute, second=0, microsecond=0)
+
+    date_str = base.strftime("%Y-%m-%d")
+    slot_str = base.strftime("%H:%M")
+    return date_str, slot_str
+
+
 
 
 @bp.route('/send_ask_and_response', methods=['POST'])
@@ -941,7 +1173,7 @@ def send_ask_and_response():
         application = (data.get('application_name') or '').strip().lower()
         responses = data.get('responses')  # liste de dicts: [{'question_id':1, 'response':'Yes'}, ...]
         technician_email = data.get('technician_email')
-        print (data)
+
         # Vérifications basiques
         if not all([username, date_str, comment, qr_code, responses, technician_email]):
             return jsonify({'status': 'error', 'message': 'Missing data'}), 400
@@ -971,7 +1203,6 @@ def send_ask_and_response():
             (username, date_only, time_only, comment, qr_code, user_tech, application)
         )
         ask_repair_id = cursor.lastrowid
-        print(f"Inserted ask_repair with id: {ask_repair_id}")
         reset_auto_increment(conn, "responses")
         # Insert responses
         for resp in responses:
@@ -985,8 +1216,6 @@ def send_ask_and_response():
                 "INSERT INTO responses (question_id, response, username, qr_code, ask_repair_id, application) VALUES (%s, %s, %s, %s, %s, %s)",
                 (question_id, response_text, username, qr_code, ask_repair_id, application)
             )
-            print(f"Inserted response for question_id {question_id}")
-
         conn.commit()
         cursor.close()
         conn.close()
