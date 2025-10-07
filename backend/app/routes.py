@@ -1586,6 +1586,7 @@ def add_qr():
     data = request.json
 
     username = data.get('username')
+    qr_id = data.get('qr_id')
     qr_code = data.get('qr_code')
     country = data.get('country')
     city = data.get('city')
@@ -1593,7 +1594,7 @@ def add_qr():
     street = data.get('street')
     exact_location = data.get('exact_location')
     # Vérification des champs obligatoires
-    required_fields = [username, qr_code, country, city, zone, street, exact_location]
+    required_fields = [username,qr_id, qr_code, country, city, zone, street, exact_location]
     if not all(required_fields):
         return jsonify({'status': 'error', 'message': 'All fields are required'}), 400
 
@@ -1606,6 +1607,7 @@ def add_qr():
             UPDATE qr_codes
             SET 
                 user = %s,
+                qr_id = %s,
                 country = %s,
                 city = %s,
                 zone = %s,
@@ -1615,6 +1617,7 @@ def add_qr():
             WHERE qr_code = %s
         """, (
             username,
+            qr_id,
             country,
             city,
             zone,
