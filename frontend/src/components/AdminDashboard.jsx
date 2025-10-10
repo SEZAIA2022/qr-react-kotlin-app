@@ -55,6 +55,7 @@ const AdminDashboard = () => {
               <tr>
                 <th>ID</th>
                 <th>Application</th>
+                <th>Type</th>
                 <th>Email</th>
                 <th>City</th>
                 <th>Country</th>
@@ -69,11 +70,12 @@ const AdminDashboard = () => {
                 <tr key={user.id}>
                   <td>{index + 1}</td>
                   <td>{user.application}</td>
+                  <td>{user.type || '-'}</td>
                   <td>{user.email}</td>
                   <td>{user.city || '-'}</td>
                   <td>{user.country || '-'}</td>
                   <td>
-                    {user.is_activated === 1 ? 'Activated' : 'Not activated'}
+                    {user.is_activated === 1 ? 'Active' : 'Not active'}
                   </td>
                   <td>{user.role}</td>
                   <td>{user.qrcode_count}</td>

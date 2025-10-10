@@ -44,6 +44,9 @@ from .database import get_db_connection
 
 bp = Blueprint('main', __name__, url_prefix="/api")
 
+@bp.get("/health")
+def health():
+    return {"ok": True, "status": "healthy"}, 200
 
 @bp.post("/test_send_reset")
 def test_send_reset():
@@ -3301,6 +3304,7 @@ def user_register_web():
     email = data.get('email')
     application = (data.get('application') or '').strip().lower()
     role = data.get('role')
+    type_app = data.get('type')
 
     if not email or not role or not application:
         return jsonify({'status': 'error', 'message': 'Missing required fields.'}), 400
@@ -3316,14 +3320,13 @@ def user_register_web():
         new_id = max_id + 1
 
         query = """
-            INSERT INTO users_web (id, email, application, role, is_activated)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO users_web (id, email, application, role, is_activated, type)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(query, (new_id, email, application, role, False))
+        cursor.execute(query, (new_id, email, application, role, False, type_app))
         connection.commit()
 
     except Exception as e:
-        print(e)
         return jsonify({'status': 'error', 'message': 'Database error.'}), 500
 
     finally:
@@ -3379,7 +3382,7 @@ def get_users():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, email, username, role FROM registred_users WHERE application = %s",
+            "SELECT id, email, username, role, is_activated FROM registred_users WHERE application = %s",
             (application,)
         )
         users = cursor.fetchall()

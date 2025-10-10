@@ -155,6 +155,7 @@ const UserRegister = () => {
               <th>Email</th>
               <th>Username</th>
               <th>Role</th>
+              <th>Status</th>
               <th className="text-center">Actions</th>
             </tr>
           </thead>
@@ -171,6 +172,8 @@ const UserRegister = () => {
                   <td>{user.email}</td>
                   <td>{user.username}</td>
                   <td>{prettyRole(user.role)}</td> {/* admin/user -> Technicien/Client */}
+                  <td>{user.is_activated === 1 ? "Active" : "Not Active"}</td>
+
                   <td className="text-center">
                     <button
                       onClick={() => handleDelete(user.id)}

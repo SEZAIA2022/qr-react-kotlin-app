@@ -8,6 +8,7 @@ const UserRegisterWeb = () => {
     email: '',
     application: '',
     role: 'user',
+    type: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -20,7 +21,7 @@ const UserRegisterWeb = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.email || !formData.application || !formData.role) {
+    if (!formData.email || !formData.application || !formData.role || !formData.type) {
       toast.error('Please fill in all required fields.');
       return;
     }
@@ -29,6 +30,7 @@ const UserRegisterWeb = () => {
       email: formData.email,
       application: formData.application,
       role: formData.role,
+      type: formData.type,
     };
 
     setLoading(true);
@@ -44,6 +46,7 @@ const UserRegisterWeb = () => {
           email: '',
           application: '',
           role: 'user',
+          type: '',
         });
       } else {
         toast.error(response.data.message || 'Registration failed.');
@@ -99,6 +102,26 @@ const UserRegisterWeb = () => {
             ))}
           </div>
         </fieldset>
+        <fieldset className="fieldset">
+          <legend className="legend">Select a type:</legend>
+          <div className="radio-group">
+            {['scan', 'direct', 'both'].map((type) => (
+              <label key={type} className="radio-label">
+                <input
+                  type="radio"
+                  name="type"
+                  value={type}
+                  checked={formData.type === type}
+                  onChange={handleChange}
+                />
+                <span style={{ marginLeft: '6px', textTransform: 'capitalize' }}>
+                  {type}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
 
         <button type="submit" disabled={loading} className={`btn btn-lg ${loading ? 'btn--muted' : ''}`}>
           {loading ? 'Registering...' : 'Register'}
