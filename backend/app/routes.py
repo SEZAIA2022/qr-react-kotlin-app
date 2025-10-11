@@ -73,6 +73,46 @@ def test_send_reset():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
+@bp.route('/app_name_type', methods=['GET'])
+def get_app_name_type():
+    application_name = request.args.get('application_name', type=str)
+    if not application_name:
+        return jsonify({'status': 'error', 'message': 'application_name is required'}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # ⚠️ Vérifie NOMS EXACTS: table et colonnes
+        # Table probable: registered_users (avec "e")
+        # Colonnes: application, type
+        sql = """
+            SELECT application, type
+            FROM users_web
+            WHERE application = %s AND role = 'user'
+            LIMIT 1
+        """
+        cursor.execute(sql, (application_name,))
+        result = cursor.fetchone()
+
+        return jsonify({'status': 'success', 'data': result}), 200
+
+    except Exception as e:
+        current_app.logger.exception("Error in /app_name_type")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        try:
+            if cursor is not None: cursor.close()
+        except Exception:
+            pass
+        try:
+            if conn is not None: conn.close()
+        except Exception:
+            pass
+
 
 @bp.route('/login', methods=['POST'])
 def login():
@@ -1055,7 +1095,12 @@ def send_ask_direct():
         if not row:
             return jsonify({'status': 'error', 'message': 'QR code not found'}), 404
         qr_code = row['qr_code']
-
+        cursor.execute(
+            "SELECT 1 FROM ask_repair WHERE qr_code = %s AND application = %s AND status IN ('processing', 'scheduled')",
+            (qr_code, application)
+        )
+        if cursor.fetchone():
+            return jsonify({'status': 'error', 'message': 'There is already an ongoing request for this QR code'}), 409
         # 2) email tech -> username tech
         cursor.execute(
             "SELECT username FROM users WHERE email = %s AND application = %s",
@@ -2437,7 +2482,7 @@ def format_phone():
 def generate_qr():
     data = request.get_json()
     count = int(data.get("count", 1))
-    application = (data.get('application_name') or '').strip().lower()
+    application = (data.get('application') or '').strip().lower()
     qr_list = []
 
     conn = get_db_connection()
@@ -3304,7 +3349,7 @@ def user_register_web():
     email = data.get('email')
     application = (data.get('application') or '').strip().lower()
     role = data.get('role')
-    type_app = data.get('type')
+    type_app = data.get('type').strip().lower()
 
     if not email or not role or not application:
         return jsonify({'status': 'error', 'message': 'Missing required fields.'}), 400

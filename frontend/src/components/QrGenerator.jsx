@@ -39,6 +39,8 @@ const QrGenerator = () => {
     setLoading(true);
     setResults([]);
     setPageGen(0); // reset pagination
+    println("hello " + application);
+    console.log("hello " + application);
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, {
         count: numCount,
