@@ -259,7 +259,7 @@ def logout():
             WHERE (username = %s OR email = %s) AND application = %s
         """, (username, username, application))
         conn.commit()
-
+        print(username, application, cursor.rowcount)
         if cursor.rowcount == 0:
             return jsonify({'status': 'error', 'message': "User not found."}), 404
 
@@ -2014,44 +2014,86 @@ from datetime import datetime
 def ask_repair():
     username = request.args.get('username')
     application = (request.args.get('application', default='', type=str) or '').strip().lower()
+
+    if not application:
+        return jsonify({'status': 'error', 'message': 'application is required'}), 400
+
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Requête unique avec LEFT JOIN pour récupérer qr_id en même temps
+        base_sql = """
+            SELECT
+                ar.id,
+                ar.username,
+                ar.date,
+                ar.comment,
+                ar.description_probleme,
+                ar.qr_code,
+                ar.hour_slot,
+                ar.status,
+                ar.user_tech,
+                qc.qr_id
+            FROM ask_repair AS ar
+            LEFT JOIN qr_codes AS qc
+              ON qc.application = ar.application
+             AND qc.qr_code     = ar.qr_code
+            WHERE ar.application = %s
+        """
+
+        params = [application]
         if username:
-            cursor.execute(
-                "SELECT id, username, date, comment, qr_code, hour_slot, status, user_tech FROM ask_repair WHERE username = %s AND application = %s",
-                (username, application)
-            )
-        else:
-            cursor.execute("SELECT id, username, date, comment, qr_code, hour_slot, status, user_tech FROM ask_repair WHERE application = %s",
-                           (application, ))
+            base_sql += " AND ar.username = %s"
+            params.append(username)
 
-        asks = cursor.fetchall()
+        cursor.execute(base_sql, tuple(params))
+        rows = cursor.fetchall()
 
-        asks_list = [{
-            'id': row[0],
-            'username': row[1],
-            'date': row[2].strftime("%A, %d %b %Y") if row[2] else None,
-            'comment': row[3],
-            'qr_code': row[4],
-            'hour_slot': (
-                f"{row[5].seconds // 3600:02}:{(row[5].seconds % 3600) // 60:02}:{row[5].seconds % 60:02}"
-                if row[5] else None
-            ),
-            'status': row[6],
-            'user_tech': row[7]
-        } for row in asks]
+        def fmt_time(td):
+            # MySQL TIME via mysql-connector => datetime.timedelta (souvent)
+            if td is None:
+                return None
+            total = int(td.total_seconds())  # gère >24h si jamais
+            h = total // 3600
+            m = (total % 3600) // 60
+            s = total % 60
+            return f"{h:02}:{m:02}:{s:02}"
+
+        asks_list = []
+        for row in rows:
+            # row indices alignés avec le SELECT ci-dessus
+            asks_list.append({
+                'id': row[0],
+                'username': row[1],
+                'date': row[2].strftime("%A, %d %b %Y") if row[2] else None,
+                'comment': row[3],
+                'description_probleme': row[4],
+                'qr_code': row[9],
+                'hour_slot': fmt_time(row[6]),
+                'status': row[7],
+                'user_tech': row[8],
+            })
+
 
         return jsonify(asks_list), 200
 
     except mysql.connector.Error as err:
         return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
-
+    except Exception as e:
+        # utile pour les erreurs de format/None/etc.
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
     finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+        try:
+            if cursor:
+                cursor.close()
+            if conn and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+
 
 
 @bp.route('/send_email', methods=['POST'])
@@ -2215,6 +2257,48 @@ def cancel_appointment():
         except Exception:
             pass
 
+@bp.route('/get_id_qr', methods=['GET'])
+def get_id_qr():
+    username = request.args.get('username')
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
+
+    if not username or not application:
+        return jsonify({'status': 'error', 'message': 'Username and application are required'}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT qr_id
+            FROM qr_codes
+            WHERE user = %s AND application = %s
+        """, (username, application))
+        rows = cursor.fetchall()
+
+        if not rows:
+            return jsonify({'status': 'error', 'message': 'No QR codes found for this user'}), 404
+
+        # Extraire uniquement les qr_id non nuls
+        qr_ids = [row[0] for row in rows if row[0] is not None]
+
+        return jsonify({'status': 'success', 'qr_ids': qr_ids}), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if conn and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+
 
 
 @bp.route('/get_qrcodes', methods=['GET'])
@@ -2227,13 +2311,14 @@ def get_qrcodes():
         cursor = connection.cursor(dictionary=True)
 
         cursor.execute(
-            "SELECT qr_code FROM qr_codes WHERE is_active = %s AND application = %s",
+            "SELECT qr_code, qr_id FROM qr_codes WHERE is_active = %s AND application = %s",
             (1, application)
         )
         results = cursor.fetchall()
 
         qrcodes = [row['qr_code'] for row in results if row['qr_code']]
-        return jsonify({'status': 'success', 'qrcodes': qrcodes}), 200
+        qrids = [row['qr_id'] for row in results if row.get('qr_id')]
+        return jsonify({'status': 'success', 'qrcodes': qrcodes, 'qrids': qrids}), 200
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -2247,7 +2332,6 @@ def get_qrcodes():
         except Exception:
             pass
 
-            
 
 
 @bp.route('/ask_repair/details/<int:repair_id>', methods=['GET'])
@@ -2377,14 +2461,18 @@ def add_description():
 @bp.route('/get_repair_by_qrcode_full', methods=['GET'])
 def get_repair_by_qrcode_full():
     try:
-        qr_code = request.args.get('qr_code')
+        qr_id = request.args.get('qr_id')
         user_tech = request.args.get('user_tech')
 
-        if not qr_code or not user_tech:
+        if not qr_id or not user_tech:
             return jsonify({'status': 'error', 'message': "All data is required."}), 400
 
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT qr_code FROM qr_codes WHERE qr_id = %s", (qr_id,))
+        qr_result = cursor.fetchone()
+        qr_code = qr_result['qr_code']
+        print(f"Resolved qr_id {qr_id} to qr_code {qr_code}")
 
         # Récupérer toutes les réparations "repaired" ou "processing" du technicien
         query = """
@@ -2424,7 +2512,7 @@ def get_repair_by_qrcode_full():
                 'username': username,
                 'date': row.get('date').strftime("%A, %d %b %Y") if row.get('date') else None,
                 'comment': row.get('comment'),
-                'qr_code': row.get('qr_code'),
+                'qr_code': qr_id,
                 'hour_slot': (
                     f"{row['hour_slot'].seconds // 3600:02}:{(row['hour_slot'].seconds % 3600) // 60:02}:{row['hour_slot'].seconds % 60:02}"
                     if row.get('hour_slot') else None

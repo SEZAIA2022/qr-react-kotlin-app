@@ -39,7 +39,7 @@ const QrGenerator = () => {
     setLoading(true);
     setResults([]);
     setPageGen(0); // reset pagination
-    println("hello " + application);
+  
     console.log("hello " + application);
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, {
@@ -77,12 +77,18 @@ const QrGenerator = () => {
     const win = window.open('', '_blank');
     win.document.write(`
       <html>
-        <head><title>Print QR Code</title></head>
-        <body style="text-align:center; font-family: Arial;">
-          <h2>QR Code: ${qr.image_path.split('/').pop()}</h2>
+        <body style="
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+          font-family: Arial;
+        ">
           <img src="${process.env.REACT_APP_API_URL}${qr.image_path}" alt="QR code" width="300" height="300" />
         </body>
       </html>
+
     `);
     win.document.close();
     win.focus();

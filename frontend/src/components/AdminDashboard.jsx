@@ -70,7 +70,7 @@ const AdminDashboard = () => {
                 <tr key={user.id}>
                   <td>{index + 1}</td>
                   <td>{user.application}</td>
-                  <td>{user.type || '-'}</td>
+                  <td>{user.role === 'admin' ? '-' : user.type}</td>
                   <td>{user.email}</td>
                   <td>{user.city || '-'}</td>
                   <td>{user.country || '-'}</td>
@@ -78,7 +78,7 @@ const AdminDashboard = () => {
                     {user.is_activated === 1 ? 'Active' : 'Not active'}
                   </td>
                   <td>{user.role}</td>
-                  <td>{user.qrcode_count}</td>
+                  <td>{user.role === 'admin' ? '-' : user.qrcode_count}</td>
                   <td>
                     <button
                       className="btn btn--danger btn--sm"
