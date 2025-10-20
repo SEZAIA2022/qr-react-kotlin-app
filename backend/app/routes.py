@@ -2739,6 +2739,138 @@ def generate_qr():
     return jsonify(qr_list), 201
 
 
+
+
+@bp.route("/problem-types", methods=["POST"])
+def add_problem_type():
+    data = request.get_json(silent=True) or {}
+    type_name = (data.get("type_name") or "").strip()
+    application = (data.get("application_name") or "").strip().lower()
+
+    if not type_name or not application:
+        return jsonify({"status": "error", "message": "type_name et application_name sont requis"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Récupérer le dernier ID existant
+        cursor.execute("SELECT MAX(id) FROM problem_types")
+        max_id = cursor.fetchone()[0] or 0
+        new_id = max_id + 1
+
+        # Insérer en fixant l'ID
+        cursor.execute(
+            "INSERT INTO problem_types (id, type_name, application) VALUES (%s, %s, %s)",
+            (new_id, type_name, application)
+        )
+        conn.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Type de problème ajouté",
+            "id": new_id,
+            "type_name": type_name,
+            "application": application
+        }), 201
+
+    except mysql.connector.Error as err:
+        if getattr(err, "errno", None) == 1062:
+            return jsonify({
+                "status": "error",
+                "message": "Ce type existe déjà pour cette application"
+            }), 409
+        return jsonify({"status": "error", "message": f"Database error: {str(err)}"}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@bp.route("/problem-types", methods=["GET"])
+def get_problem_types():
+    application = (request.args.get("application", default="", type=str) or "").strip().lower()
+    if not application:
+        return jsonify({"status": "error", "message": "Paramètre 'application' requis"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT type_name FROM problem_types WHERE application = %s ORDER BY type_name ASC",
+            (application,)
+        )
+        rows = cursor.fetchall()
+        types = [r[0] for r in rows]
+
+        return jsonify({
+            "status": "success",
+            "application": application,
+            "types": types
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+@bp.route("/problem-types/<path:type_name>", methods=["DELETE"])
+def delete_problem_type(type_name):
+    application = (request.args.get("application", default="", type=str) or "").strip().lower()
+    type_name = (type_name or "").strip()
+
+    if not type_name or not application:
+        return jsonify({
+            "status": "error",
+            "message": "type_name (dans l’URL) et application (query param) sont requis"
+        }), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM problem_types WHERE type_name = %s AND application = %s",
+            (type_name, application)
+        )
+        if cursor.fetchone()[0] == 0:
+            return jsonify({"status": "error", "message": "Type introuvable pour cette application"}), 404
+
+        cursor.execute(
+            "DELETE FROM problem_types WHERE type_name = %s AND application = %s",
+            (type_name, application)
+        )
+        conn.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Type supprimé",
+            "type_name": type_name,
+            "application": application
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+
+
 @bp.route("/questions", methods=["POST"])
 def add_question():
     data = request.get_json()
