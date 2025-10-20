@@ -7,7 +7,8 @@ import os
 import json
 import random
 import re
-from datetime import datetime, timedelta
+from decimal import Decimal
+from datetime import datetime, timedelta, date
 from mysql.connector.errors import IntegrityError  
 import firebase_admin
 from firebase_admin import messaging, credentials
@@ -146,7 +147,8 @@ def login():
 
     if not users:
         return jsonify({'status': 'error', 'message': "Incorrect username or password."}), 404
-
+    if users[12] == True:
+        return jsonify({'status': 'error', 'message': "Account opened on another device, disconnect and try again later."}), 403
     try:
         hashed_password = users[2]
         if isinstance(hashed_password, str):
@@ -2257,6 +2259,53 @@ def cancel_appointment():
         except Exception:
             pass
 
+
+@bp.route('/exist_company', methods=['POST'])
+def exist_company():
+    data = request.get_json(silent=True) or {}
+    application = (data.get('application_name') or '').strip().lower()
+
+    if not application:
+        return jsonify({'status': 'error', 'message': 'Application name is required.'}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # ⚠️ Vérifie le bon nom de colonne dans ta table users_web :
+        # Si la colonne s'appelle "application_name", dé-commente la requête 2 et commente la 1.
+        # 1) colonne "application"
+        sql = "SELECT 1 FROM users_web WHERE application = %s LIMIT 1"
+        # 2) colonne "application_name"
+        # sql = "SELECT 1 FROM users_web WHERE application_name = %s LIMIT 1"
+
+        cursor.execute(sql, (application,))   # tuple correct (application,)
+
+        row = cursor.fetchone()
+        if row is None:
+            return jsonify({'status': 'error', 'message': 'Unknown company'}), 404
+
+        return jsonify({'status': 'success', 'message': 'Company exists'}), 200
+
+    except mysql.connector.Error as err:
+        # Log DB error (visible dans journalctl)
+        app.logger.exception("Database error in /exist_company")
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+    except Exception as e:
+        app.logger.exception("Unexpected error in /exist_company")
+        return jsonify({'status': 'error', 'message': f'Unexpected error: {str(e)}'}), 500
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if conn and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+
+            
 @bp.route('/get_id_qr', methods=['GET'])
 def get_id_qr():
     username = request.args.get('username')
@@ -2333,6 +2382,77 @@ def get_qrcodes():
             pass
 
 
+
+
+from datetime import datetime, date, timedelta
+from flask import jsonify, request
+import mysql.connector
+
+@bp.route('/get_repair_by_day', methods=['GET'])
+def get_repair_by_day():
+    application = (request.args.get('application', default='', type=str) or '').strip().lower()
+    tech_username = (request.args.get('tech_username', default='', type=str) or '').strip()
+    date_str = date.today().isoformat()  # Date du jour
+
+    if not application or not tech_username:
+        return jsonify({'status': 'error', 'message': 'All parameters are required'}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # 🧩 Requête principale :
+        # - qc.qr_id vient de la table qr_codes
+        # - CONCAT_WS(', ', u.city, u.address) combine les champs city + address (ignore NULL)
+        cursor.execute("""
+            SELECT
+                ar.username,
+                ar.`date`,
+                ar.comment,
+                qc.qr_id AS qr_code,
+                ar.hour_slot,
+                ar.status,
+                ar.description_probleme,
+                ar.user_tech,
+                CONCAT_WS(', ', u.city, u.address) AS address
+            FROM ask_repair ar
+            LEFT JOIN qr_codes qc
+                ON qc.qr_code = ar.qr_code
+            LEFT JOIN users u
+                ON u.username = ar.username
+               AND u.application = ar.application
+            WHERE ar.application = %s
+              AND ar.user_tech   = %s
+              AND ar.`date`      = %s
+            ORDER BY ar.hour_slot ASC, ar.id ASC
+        """, (application, tech_username, date_str))
+
+        repairs = cursor.fetchall()
+
+        # 🔧 Conversion TIME/DATE pour le JSON
+        for r in repairs:
+            if isinstance(r.get('hour_slot'), timedelta):
+                total_seconds = int(r['hour_slot'].total_seconds())
+                h = total_seconds // 3600
+                m = (total_seconds % 3600) // 60
+                s = total_seconds % 60
+                r['hour_slot'] = f"{h:02d}:{m:02d}:{s:02d}"
+
+            if isinstance(r.get('date'), (datetime, date)):
+                r['date'] = r['date'].isoformat()
+
+        return jsonify({'status': 'success', 'repairs': repairs}), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({'status': 'error', 'message': f'Database error: {str(err)}'}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @bp.route('/ask_repair/details/<int:repair_id>', methods=['GET'])
 def get_repair_with_responses(repair_id):
@@ -2524,7 +2644,7 @@ def get_repair_by_qrcode_full():
             }
             formatted_results.append(formatted_row)
 
-        return jsonify({'status': 'success', 'data': formatted_results}), 200
+        return jsonify({'status': 'success', 'repairs': formatted_results}), 200
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': f"Erreur serveur : {str(e)}"}), 500
