@@ -2009,6 +2009,54 @@ def exist_qr():
         if conn and conn.is_connected():
             conn.close()
 
+@bp.route('/get_qr_id', methods=['GET'])
+def get_qr_id():
+    qr_code = (request.args.get('qr_code') or '').strip()
+    application = (request.args.get('application') or '').strip().lower()
+
+    if not qr_code or not application:
+        return jsonify({
+            "status": "error",
+            "message": "Les paramètres qr_code et application sont requis."
+        }), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT qr_id
+            FROM qr_codes
+            WHERE qr_code = %s AND application = %s
+        """, (qr_code, application))
+        row = cursor.fetchone()
+
+        if not row:
+            return jsonify({
+                "status": "error",
+                "message": "QR code introuvable pour cette application."
+            }), 404
+
+        return jsonify({
+            "status": "success",
+            "qr_id": row["qr_id"],
+            "qr_code": qr_code,
+            "application": application
+        }), 200
+
+    except mysql.connector.Error as err:
+        return jsonify({
+            "status": "error",
+            "message": f"Erreur base de données : {err}"
+        }), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 from datetime import datetime
@@ -2538,8 +2586,9 @@ def add_description():
 
     repair_id = data.get('id')
     description = data.get('description_probleme')
+    problem_type = data.get('type_name')
 
-    if not repair_id or description is None:
+    if not repair_id or not description or problem_type is None:        
         return jsonify({
             'status': 'error',
             'message': 'Champs id et description_probleme requis'
@@ -2551,10 +2600,10 @@ def add_description():
 
         update_query = """
             UPDATE ask_repair
-            SET description_probleme = %s,status = 'repaired'
+            SET description_probleme = %s,status = 'repaired', type_name = %s
             WHERE id = %s
         """
-        cursor.execute(update_query, (description, repair_id))
+        cursor.execute(update_query, (description, problem_type, repair_id))
         conn.commit()
 
         if cursor.rowcount == 0:
