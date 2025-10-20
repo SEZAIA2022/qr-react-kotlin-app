@@ -15,6 +15,7 @@ import QuestionForm from './components/QuestionForm';
 import QrGenerator from './components/QrGenerator';
 import StaticPage from './components/StaticPage';
 import HelpPage from './components/HelpPage';
+import ProblemTypeForm from './components/ProblemTypeForm';
 
 import Signup from './components/Signup';
 import Login from './components/Login';
@@ -192,6 +193,7 @@ function App() {
           <Route path="/questions" element={<PrivateRoute><QuestionForm /></PrivateRoute>} />
           <Route path="/static_page" element={<PrivateRoute><StaticPage /></PrivateRoute>} />
           <Route path="/help_page" element={<PrivateRoute><HelpPage /></PrivateRoute>} />
+          <Route path="/problem-types" element={<PrivateRoute><ProblemTypeForm /></PrivateRoute>} />
           <Route path="/user_register" element={<PrivateRoute><UserRegister /></PrivateRoute>} />
           <Route
             path="/user_register_web"
@@ -280,6 +282,13 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
               active={location.pathname === '/questions'}
             >
               Questions
+            </CustomLink>
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink
+              to="/problem-types"
+              active={location.pathname === '/problem-types'}
+            >
+              Problem types
             </CustomLink>
             <span style={{ margin: '0 8px' }}>|</span>
             <CustomLink
