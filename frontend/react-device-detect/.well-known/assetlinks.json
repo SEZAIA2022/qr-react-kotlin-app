@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.houssein.sezaia",
+      "sha256_cert_fingerprints": [
+        "18:DE:2A:74:AA:A7:B1:1A:77:28:A6:B9:86:13:33:91:F8:56:7F:AE:03:34:1C:BC:D9:98:9A:97:D0:E9:F0:5C"
+      ]
+    }
+  }
+]

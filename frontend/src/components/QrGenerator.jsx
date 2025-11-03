@@ -10,6 +10,7 @@ const QrGenerator = () => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pageGen, setPageGen] = useState(0);
+  const [qrSize, setQrSize] = useState(3);
 
   // Historique
   const [history, setHistory] = useState([]);
@@ -45,6 +46,7 @@ const QrGenerator = () => {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate_qr`, {
         count: numCount,
         application,
+        size: qrSize,
       });
       setResults(res.data || []);
       setShowHistory(false);
@@ -79,6 +81,7 @@ const QrGenerator = () => {
       <html>
         <body style="
           display: flex;
+          flex-direction: column;
           justify-content: center;
           align-items: center;
           height: 100vh;
@@ -86,6 +89,7 @@ const QrGenerator = () => {
           font-family: Arial;
         ">
           <img src="${process.env.REACT_APP_API_URL}${qr.image_path}" alt="QR code" width="300" height="300" />
+          <div style="margin-top: 10px; font-style: italic;">Assist by scan</div>
         </body>
       </html>
 
@@ -158,6 +162,18 @@ const QrGenerator = () => {
               placeholder="1"
               aria-label="Number of QR codes to generate"
             />
+            <select
+              value={qrSize}
+              onChange={(e) => setQrSize(parseFloat(e.target.value))}
+              className="input"
+              aria-label="QR code size in cm"
+            >
+              <option value={1.5}>1.5 cm</option>
+              <option value={3}>3 cm</option>
+              <option value={4.5}>4.5 cm</option>
+              <option value={6}>6 cm</option>
+            </select>
+
             <button
               type="button"
               onClick={generateQR}

@@ -26,6 +26,8 @@ import CreateNewPassword from './components/CreateNewPassword';
 import AdminDashboard from './components/AdminDashboard';
 import UserRegisterWeb from './components/UserRegisterWeb';
 import PasswordSuccess from './components/PasswordSuccess';
+import DownloadApp from './components/DownloadApp';
+
 import './style.css';
 
 function AppWrapper() {
@@ -167,6 +169,8 @@ function App() {
               )
             }
           />
+          <Route path="/download" element={<DownloadApp />} />
+
            <Route path="/verify" element={<VerifyEmail />} />
 
           <Route
@@ -203,7 +207,6 @@ function App() {
               </PrivateRoute>
             }
           />
-
           <Route path="*" element={<Navigate to={isAuthenticated ? "/qr-generator" : "/login"} replace />} />
         </Routes>
       </main>
@@ -337,6 +340,9 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
           <CustomLink to="/signup" active={location.pathname === '/signup'}>
             Sign Up
           </CustomLink>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <CustomLink to="/download" active={location.pathname === '/download'}>Download App</CustomLink>
+
         </>
       )}
     </nav>

@@ -489,10 +489,39 @@ def get_user_by_contact(data, application):
 
 
 
-def generate_qr_code(output_folder, application, code_payload: str, filename: str):
+def generate_qr_code(output_folder, application, code_payload: str, filename: str, size: float = 3):
+    """
+    Génère un QR code de taille personnalisée.
+
+    Args:
+        output_folder (str): dossier de sortie
+        application (str): nom de l'application
+        code_payload (str): texte ou URL à encoder
+        filename (str): nom du fichier PNG à générer
+        size (float): taille du QR en centimètres (par défaut 3 cm)
+    """
     os.makedirs(output_folder, exist_ok=True)
     path = os.path.join(output_folder, filename)
-    img = qrcode.make(code_payload)
+
+    # 🔹 Conversion cm → pixels (1 cm ≈ 37.8 px à 96 DPI)
+    pixel_size = int(size * 37.8)
+
+    # 🔹 Crée une instance QRCode avec un box_size dynamique
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=max(1, pixel_size // 29),  # taille des "cases"
+        border=4,
+    )
+
+    qr.add_data(code_payload)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # 🔹 Redimension finale exacte
+    img = img.resize((pixel_size, pixel_size))
+
     img.save(path)
     return path
 

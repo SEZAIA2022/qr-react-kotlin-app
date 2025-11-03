@@ -2740,6 +2740,7 @@ def generate_qr():
     data = request.get_json()
     count = int(data.get("count", 1))
     application = (data.get('application') or '').strip().lower()
+    size = float(data.get("size", 3))
     qr_list = []
 
     conn = get_db_connection()
@@ -2763,7 +2764,7 @@ def generate_qr():
         payload = code  # ou f"https://assistbyscan.com/qr/{code}" si tu veux une URL
 
         # 4) Crée l'image
-        path = generate_qr_code(output_folder, application, payload, filename)
+        path = generate_qr_code(output_folder, application, payload, filename, size)
 
         # 5) Insert (laisse MySQL gérer l'AUTO_INCREMENT)
         current_id += 1
