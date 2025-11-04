@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 import traceback
+from PIL import Image
+
 # Stockage OTP temporaire
 otp_storage = {}
 register_otp_storage = {}
@@ -489,42 +491,56 @@ def get_user_by_contact(data, application):
 
 
 
-def generate_qr_code(output_folder, application, code_payload: str, filename: str, size: float = 3):
+def generate_qr_code(output_folder, application, code_payload: str, filename: str, size_cm: float):
     """
-    Génère un QR code de taille personnalisée.
+    Génère un QR code avec une taille exacte à l'impression (en cm).
 
-    Args:
-        output_folder (str): dossier de sortie
-        application (str): nom de l'application
-        code_payload (str): texte ou URL à encoder
-        filename (str): nom du fichier PNG à générer
-        size (float): taille du QR en centimètres (par défaut 3 cm)
+    size_cm : taille finale du QR code à l'impression en cm
     """
     os.makedirs(output_folder, exist_ok=True)
     path = os.path.join(output_folder, filename)
 
-    # 🔹 Conversion cm → pixels (1 cm ≈ 37.8 px à 96 DPI)
-    pixel_size = int(size * 37.8)
+    # Conversion cm → pixels pour 300 DPI
+    # Firefox et Chrome utilisent 96 px = 1 inch comme base physique
+    css_dpi = 96
+    total_pixels = int(size_cm * css_dpi / 2.54)
 
-    # 🔹 Crée une instance QRCode avec un box_size dynamique
-    qr = qrcode.QRCode(
-        version=1,
+
+    # Création QR code temporaire pour calculer le nombre de modules
+    qr_temp = qrcode.QRCode(
+        version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=max(1, pixel_size // 29),  # taille des "cases"
-        border=4,
+        box_size=1,
+        border=4
     )
+    qr_temp.add_data(code_payload)
+    qr_temp.make(fit=True)
 
+    num_modules = qr_temp.modules_count
+    border = 4
+
+    # Calcul de la taille exacte d’un module en pixels
+    box_size = max(1, total_pixels // (num_modules + 2 * border))
+
+    # Re-créer le QR code avec box_size correct
+    qr = qrcode.QRCode(
+        version=qr_temp.version,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=box_size,
+        border=border
+    )
     qr.add_data(code_payload)
     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="black", back_color="white")
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-    # 🔹 Redimension finale exacte
-    img = img.resize((pixel_size, pixel_size))
+    # Ajuster exactement en pixels (au cas où la division n’est pas entière)
+    final_pixel_size = box_size * (num_modules + 2 * border)
+    img = img.resize((final_pixel_size, final_pixel_size), Image.NEAREST)
 
+    # Sauvegarde avec DPI pour impression exacte
     img.save(path)
     return path
-
 
 
 

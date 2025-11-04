@@ -56,6 +56,20 @@ const QrGenerator = () => {
       setLoading(false);
     }
   };
+ 
+  const deleteQRCode = async (qrCode) => {
+    if (!window.confirm('Do you really want to delete this QR code?')) return;
+
+
+    try {
+    await axios.delete(`${process.env.REACT_APP_API_URL}/api/qr/${qrCode}`);
+    // Retirer le QR code supprimé de l'affichage
+    setHistory((prev) => prev.filter((qr) => qr.code !== qrCode));
+    } catch (err) {
+    setErrorMsg('Error deleting the QR code.');
+    }
+    };
+
 
   const fetchHistory = async () => {
     setErrorMsg('');
@@ -79,26 +93,49 @@ const QrGenerator = () => {
     const win = window.open('', '_blank');
     win.document.write(`
       <html>
-        <body style="
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          height: 100vh;
-          margin: 0;
-          font-family: Arial;
-        ">
-          <img src="${process.env.REACT_APP_API_URL}${qr.image_path}" alt="QR code" width="300" height="300" />
-          <div style="margin-top: 10px; font-style: italic;">Assist by scan</div>
+        <head>
+          <meta charset="utf-8" />
+          <title>Print QR</title>
+          <style>
+            @page {
+              margin: 0;
+              size: auto;
+            }
+            body {
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              height: 100vh;
+              margin: 0;
+              flex-direction: column;
+            }
+            img {
+              width: ${qr.size_cm}cm;
+              height: ${qr.size_cm}cm;
+              image-rendering: pixelated;
+            }
+            div {
+              margin-top: 10px;
+              font-style: italic;
+              font-family: Arial, sans-serif;
+            }
+          </style>
+        </head>
+        <body>
+          <img src="${process.env.REACT_APP_API_URL}${qr.image_path}" alt="QR code" />
+          <div>Assist by scan</div>
+          <script>
+            window.onload = () => {
+              window.print();
+            };
+          </script>
         </body>
       </html>
-
     `);
     win.document.close();
-    win.focus();
-    win.print();
-    win.close();
   };
+
+
 
   // ===== Pagination (génération) =====
   const totalGen = results.length;
@@ -312,12 +349,30 @@ const QrGenerator = () => {
                         onLoad={(e) => e.currentTarget.classList.add('loaded')}
                       />
                     </div>
-                    <button type="button" className="download-btn" onClick={() => printQRCode(qr)}>
-                      Print
-                    </button>
+                    
+                    {/* Conteneur pour les boutons côte à côte */}
+                    <div className="button-group">
+                      <button
+                        type="button"
+                        className="btn btn--action"
+                        onClick={() => printQRCode(qr)}
+                      >
+                        Print
+                      </button>
+                      {qr.status !== 'active' && (
+                        <button
+                          type="button"
+                          className="btn btn--action btn--danger"
+                          onClick={() => deleteQRCode(qr.code)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
+
 
               {/* Pagination bas */}
               <div className="pagination">

@@ -1,0 +1,50 @@
+Nov 04 08:58:20 ubuntu gunicorn[1200189]:     img = img.resize((pixel_size, pixel_size), Image.LANCZOS)
+Nov 04 08:58:20 ubuntu gunicorn[1200189]: NameError: name 'Image' is not defined
+Nov 04 09:00:13 ubuntu systemd[1]: Stopping Gunicorn for QR React Kotlin App (Flask backend)...
+Nov 04 09:00:13 ubuntu gunicorn[1200189]: [2025-11-04 09:00:13 +0000] [1200189] [INFO] Worker exiting (pid: 1200189)
+Nov 04 09:00:13 ubuntu gunicorn[1200185]: [2025-11-04 09:00:13 +0000] [1200185] [INFO] Handling signal: term
+Nov 04 09:00:13 ubuntu gunicorn[1200188]: [2025-11-04 09:00:13 +0000] [1200188] [INFO] Worker exiting (pid: 1200188)
+Nov 04 09:00:13 ubuntu gunicorn[1200188]: sezaia
+Nov 04 09:00:13 ubuntu gunicorn[1200188]: delta
+Nov 04 09:00:13 ubuntu gunicorn[1200190]: [2025-11-04 09:00:13 +0000] [1200190] [INFO] Worker exiting (pid: 1200190)
+Nov 04 09:00:13 ubuntu gunicorn[1200185]: [2025-11-04 09:00:13 +0000] [1200185] [ERROR] Worker (pid:1200189) was sent SIGTERM!
+Nov 04 09:00:13 ubuntu gunicorn[1200185]: [2025-11-04 09:00:13 +0000] [1200185] [INFO] Shutting down: Master
+Nov 04 09:00:13 ubuntu systemd[1]: myapp-backend.service: Deactivated successfully.
+Nov 04 09:00:13 ubuntu systemd[1]: Stopped Gunicorn for QR React Kotlin App (Flask backend).
+Nov 04 09:00:13 ubuntu systemd[1]: myapp-backend.service: Consumed 2.723s CPU time.
+Nov 04 09:00:13 ubuntu systemd[1]: Started Gunicorn for QR React Kotlin App (Flask backend).
+Nov 04 09:00:13 ubuntu gunicorn[1200279]: [2025-11-04 09:00:13 +0000] [1200279] [INFO] Starting gunicorn 23.0.0
+Nov 04 09:00:13 ubuntu gunicorn[1200279]: [2025-11-04 09:00:13 +0000] [1200279] [INFO] Listening at: http://127.0.0.1:8000 (1200279)
+Nov 04 09:00:13 ubuntu gunicorn[1200279]: [2025-11-04 09:00:13 +0000] [1200279] [INFO] Using worker: sync
+Nov 04 09:00:13 ubuntu gunicorn[1200282]: [2025-11-04 09:00:13 +0000] [1200282] [INFO] Booting worker with pid: 1200282
+Nov 04 09:00:13 ubuntu gunicorn[1200283]: [2025-11-04 09:00:13 +0000] [1200283] [INFO] Booting worker with pid: 1200283
+Nov 04 09:00:13 ubuntu gunicorn[1200284]: [2025-11-04 09:00:13 +0000] [1200284] [INFO] Booting worker with pid: 1200284
+Nov 04 09:02:42 ubuntu gunicorn[1200279]: [2025-11-04 09:02:42 +0000] [1200279] [INFO] Handling signal: term
+Nov 04 09:02:42 ubuntu gunicorn[1200282]: [2025-11-04 09:02:42 +0000] [1200282] [INFO] Worker exiting (pid: 1200282)
+Nov 04 09:02:42 ubuntu systemd[1]: Stopping Gunicorn for QR React Kotlin App (Flask backend)...
+Nov 04 09:02:42 ubuntu gunicorn[1200284]: [2025-11-04 09:02:42 +0000] [1200284] [INFO] Worker exiting (pid: 1200284)
+Nov 04 09:02:42 ubuntu gunicorn[1200284]: ❌ ERREUR /generate_qr : Traceback (most recent call last):
+Nov 04 09:02:42 ubuntu gunicorn[1200284]:   File "/opt/myapp/qr-react-kotlin-app/backend/app/routes.py", line 2759, in generate_qr
+Nov 04 09:02:42 ubuntu gunicorn[1200284]:     path = generate_qr_code(output_folder, application, payload, filename, size)
+Nov 04 09:02:42 ubuntu gunicorn[1200284]:   File "/opt/myapp/qr-react-kotlin-app/backend/app/utils.py", line 514, in generate_qr_code
+Nov 04 09:02:42 ubuntu gunicorn[1200284]:     img = img.resize((pixel_size, pixel_size), Image.LANCZOS)
+Nov 04 09:02:42 ubuntu gunicorn[1200284]: NameError: name 'Image' is not defined
+Nov 04 09:02:42 ubuntu gunicorn[1200283]: [2025-11-04 09:02:42 +0000] [1200283] [INFO] Worker exiting (pid: 1200283)
+Nov 04 09:02:42 ubuntu gunicorn[1200283]: delta
+Nov 04 09:02:42 ubuntu gunicorn[1200283]: ❌ ERREUR /generate_qr : Traceback (most recent call last):
+Nov 04 09:02:42 ubuntu gunicorn[1200283]:   File "/opt/myapp/qr-react-kotlin-app/backend/app/routes.py", line 2759, in generate_qr
+Nov 04 09:02:42 ubuntu gunicorn[1200283]:     path = generate_qr_code(output_folder, application, payload, filename, size)
+Nov 04 09:02:42 ubuntu gunicorn[1200283]:   File "/opt/myapp/qr-react-kotlin-app/backend/app/utils.py", line 514, in generate_qr_code
+Nov 04 09:02:42 ubuntu gunicorn[1200283]:     img = img.resize((pixel_size, pixel_size), Image.LANCZOS)
+Nov 04 09:02:42 ubuntu gunicorn[1200283]: NameError: name 'Image' is not defined
+Nov 04 09:02:42 ubuntu gunicorn[1200279]: [2025-11-04 09:02:42 +0000] [1200279] [INFO] Shutting down: Master
+Nov 04 09:02:42 ubuntu systemd[1]: myapp-backend.service: Deactivated successfully.
+Nov 04 09:02:42 ubuntu systemd[1]: Stopped Gunicorn for QR React Kotlin App (Flask backend).
+Nov 04 09:02:42 ubuntu systemd[1]: myapp-backend.service: Consumed 2.483s CPU time.
+Nov 04 09:02:42 ubuntu systemd[1]: Started Gunicorn for QR React Kotlin App (Flask backend).
+Nov 04 09:02:42 ubuntu gunicorn[1200732]: [2025-11-04 09:02:42 +0000] [1200732] [INFO] Starting gunicorn 23.0.0
+Nov 04 09:02:42 ubuntu gunicorn[1200732]: [2025-11-04 09:02:42 +0000] [1200732] [INFO] Listening at: http://127.0.0.1:8000 (1200732)
+Nov 04 09:02:42 ubuntu gunicorn[1200732]: [2025-11-04 09:02:42 +0000] [1200732] [INFO] Using worker: sync
+Nov 04 09:02:42 ubuntu gunicorn[1200735]: [2025-11-04 09:02:42 +0000] [1200735] [INFO] Booting worker with pid: 1200735
+Nov 04 09:02:42 ubuntu gunicorn[1200736]: [2025-11-04 09:02:42 +0000] [1200736] [INFO] Booting worker with pid: 1200736
+Nov 04 09:02:42 ubuntu gunicorn[1200737]: [2025-11-04 09:02:42 +0000] [1200737] [INFO] Booting worker with pid: 1200737

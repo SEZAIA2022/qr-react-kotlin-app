@@ -3,7 +3,7 @@ import { isMobile } from 'react-device-detect';
 import { QRCodeCanvas } from 'qrcode.react';
 
 const DownloadApp = () => {
-const apkLink = '';
+const apkLink = 'https://assistbyscan.com/app-debug.apk';
 
 const handleMobileClick = () => {
 window.location.href = apkLink; // Téléchargement direct sur mobile

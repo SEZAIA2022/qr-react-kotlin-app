@@ -348,3 +348,41 @@ text-align: center;
 .mobile-download p {
 margin-bottom: 12px;
 }
+
+.btn-ghost{
+  background: transparent;
+  color: var(--primary);
+  border: 1.5px solid var(--primary);
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+}
+.btn-ghost:hover{
+  background: var(--primary);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.btn-ghost:active{
+  transform: translateY(0);
+}
+.btn-ghost:disabled{
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+:root.dark .btn-ghost{
+  border-color: var(--primary-hover);
+  color: var(--primary-hover);
+}
+:root.dark .btn-ghost:hover{
+  background: var(--primary-hover);
+  color: #fff;
+}
+.button-group {
+  display: flex;
+  justify-content: center; /* centre les boutons horizontalement */
+  gap: 10px;               /* espace entre les boutons */
+  margin-top: 10px;        /* espace par rapport au QR code */
+}
+

@@ -14,6 +14,7 @@ import firebase_admin
 from firebase_admin import messaging, credentials
 from email.message import EmailMessage
 import uuid
+import traceback
 
 
 from flask import Blueprint, request, jsonify, current_app
@@ -2731,62 +2732,89 @@ def format_phone():
 
 
 
+@bp.route("/qr/<qr_code>", methods=["DELETE"])
+def delete_qr(qr_code):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
+        # Récupérer le QR code
+        cursor.execute("SELECT id, is_active, image_path FROM qr_codes WHERE qr_code = %s", (qr_code,))
+        qr = cursor.fetchone()
+        if not qr:
+            return jsonify({"error": "QR code non trouvé"}), 404
 
-#Endpoint for web application react
+        qr_id, is_active, image_path = qr
+        if is_active:
+            return jsonify({"error": "Impossible de supprimer un QR code actif"}), 403
 
-@bp.route("/generate_qr", methods=["POST"])
-def generate_qr():
-    data = request.get_json()
-    count = int(data.get("count", 1))
-    application = (data.get('application') or '').strip().lower()
-    size = float(data.get("size", 3))
-    qr_list = []
+        # Supprimer le fichier physique
+        file_path = os.path.join(current_app.root_path, image_path.lstrip("/"))
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Get current max ID to avoid conflicts
-    cursor.execute("SELECT MAX(id) FROM qr_codes")
-    max_id_result = cursor.fetchone()
-    current_id = max_id_result[0] or 0
-
-    output_folder = os.path.join(current_app.root_path, "static", "qr")
-
-    for _ in range(count):
-        # 1) Génère un code unique
-        code = str(uuid.uuid4())
-
-        # 2) Nom de fichier unique (plus d’index)
-        filename = f"{application}{current_id}_{code}.png"
-
-        # 3) Payload encodé dans le QR (garde identique à ce que tu stockes en BDD)
-        payload = code  # ou f"https://assistbyscan.com/qr/{code}" si tu veux une URL
-
-        # 4) Crée l'image
-        path = generate_qr_code(output_folder, application, payload, filename, size)
-
-        # 5) Insert (laisse MySQL gérer l'AUTO_INCREMENT)
-        current_id += 1
-        cursor.execute("""
-            INSERT INTO qr_codes (id, qr_code, is_active, application, image_path)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            current_id, code, 0, application,
-            f"/static/qr/{filename}"
-        ))
+        # Supprimer de la base de données
+        cursor.execute("DELETE FROM qr_codes WHERE id = %s", (qr_id,))
         conn.commit()
 
-        qr_list.append({
-            "id": cursor.lastrowid,
-            "code": code,
-            "image_path": f"/static/qr/{filename}",
-        })
+        cursor.close()
+        conn.close()
 
-    cursor.close()
-    conn.close()
+        return jsonify({"message": "QR code supprimé avec succès"}), 200
 
-    return jsonify(qr_list), 201
+    except Exception as e:
+        import traceback
+        print("❌ ERREUR /qr DELETE :", traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+#Endpoint for web application react
+@bp.route("/generate_qr", methods=["POST"])
+def generate_qr():
+    try:
+        data = request.get_json()
+        count = int(data.get("count", 1))
+        application = (data.get('application') or '').strip().lower()
+        size = float(data.get("size"))
+        qr_list = []
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT MAX(id) FROM qr_codes")
+        max_id_result = cursor.fetchone()
+        current_id = max_id_result[0] or 0
+
+        output_folder = os.path.join(current_app.root_path, "static", "qr")
+
+        for _ in range(count):
+            code = str(uuid.uuid4())
+            filename = f"{application}{current_id}_{code}.png"
+            payload = code
+            size_cm = float(data.get("size"))  # taille en cm
+            path = generate_qr_code(output_folder, application, payload, filename, size_cm=size_cm)
+
+            current_id += 1
+            cursor.execute("""
+                INSERT INTO qr_codes (id, qr_code, is_active, application, image_path)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (current_id, code, 0, application, f"/static/qr/{filename}"))
+            conn.commit()
+            qr_list.append({
+                "id": cursor.lastrowid,
+                "code": code,
+                "image_path": f"/static/qr/{filename}",
+                "size_cm": size,
+            })
+
+        cursor.close()
+        conn.close()
+        return jsonify(qr_list), 201
+
+    except Exception as e:
+        import traceback
+        print("❌ ERREUR /generate_qr :", traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
 
 
 
