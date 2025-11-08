@@ -227,11 +227,13 @@ def send_verification_email_link(
     try:
         if use_ssl:
             with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.set_debuglevel(1)
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
         else:
             with smtplib.SMTP(smtp_host, smtp_port) as server:
                 server.ehlo(); server.starttls(); server.ehlo()
+                server.set_debuglevel(1)
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
     except Exception:
