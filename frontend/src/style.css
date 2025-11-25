@@ -386,3 +386,94 @@ margin-bottom: 12px;
   margin-top: 10px;        /* espace par rapport au QR code */
 }
 
+/* =====================================================
+   REPPORT PAGE — SPACING & STRUCTURE FIX
+===================================================== */
+
+/* Conteneur principal */
+.repport-page {
+  max-width: 1100px;
+  margin: 32px auto;
+}
+
+/* Cartes : plus d’espace vertical */
+.repport-page .card {
+  margin-bottom: 20px;
+  padding: 18px 20px;
+}
+
+/* Tasks (titre / sous titre) */
+.repport-page .task.card {
+  padding: 16px 18px;
+  margin-top: 20px;
+}
+
+/* Sous-carte (questions, add forms) */
+.repport-page .task .card {
+  padding: 16px;
+  margin-top: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+}
+
+/* Séparation entre bouton "Delete" et contenu */
+.repport-page .btn-row.right {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+/* Séparation plus nette entre sections */
+.repport-page .subtitle--small {
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+/* Inputs mieux espacés */
+.repport-page .input,
+.repport-page .textarea,
+.repport-page select {
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+/* Boutons Add / Cancel espacés */
+.repport-page button.btn {
+  margin-top: 10px;
+}
+
+/* Séparation nette avant form "Add subtitle" */
+.repport-page .add-subtitle-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* Idem pour Add question */
+.repport-page .add-question-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* Petits textes (No questions…) */
+.repport-page .muted {
+  margin-top: 5px;
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+/* Amélioration flèche toggle */
+.repport-page .task__title .chev {
+  font-size: 14px;
+  margin-left: 10px;
+}
+
+/* Text helpers communs (RepportPage, HelpPage, etc.) */
+.bold{
+  font-weight: 600;
+}
+
+.muted{
+  color: var(--text-light);
+  font-size: 0.9rem;
+}

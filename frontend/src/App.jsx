@@ -29,6 +29,7 @@ import PasswordSuccess from './components/PasswordSuccess';
 import DownloadApp from './components/DownloadApp';
 
 import './style.css';
+import RepportPage from './components/RepportPage';
 
 function AppWrapper() {
   return (
@@ -197,6 +198,9 @@ function App() {
           <Route path="/questions" element={<PrivateRoute><QuestionForm /></PrivateRoute>} />
           <Route path="/static_page" element={<PrivateRoute><StaticPage /></PrivateRoute>} />
           <Route path="/help_page" element={<PrivateRoute><HelpPage /></PrivateRoute>} />
+          <Route path="/report" element={<PrivateRoute><RepportPage /></PrivateRoute>} />
+
+
           <Route path="/problem-types" element={<PrivateRoute><ProblemTypeForm /></PrivateRoute>} />
           <Route path="/user_register" element={<PrivateRoute><UserRegister /></PrivateRoute>} />
           <Route
@@ -286,6 +290,18 @@ const NavBar = ({ isAuthenticated, onLogout }) => {
             >
               Questions
             </CustomLink>
+
+
+            <span style={{ margin: '0 8px' }}>|</span>
+            <CustomLink
+              to="/report"
+              active={location.pathname === '/report'}
+            >
+              Report 
+            </CustomLink>
+
+
+
             <span style={{ margin: '0 8px' }}>|</span>
             <CustomLink
               to="/problem-types"
