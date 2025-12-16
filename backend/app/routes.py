@@ -3904,425 +3904,212 @@ def delete_user():
 @bp.route('/repport', methods=['POST'])
 def create_repport():
     data = request.get_json(silent=True) or {}
-
     application = (data.get('application') or '').strip()
     title = (data.get('title') or '').strip()
-
-    # subtitle peut être vide, mais pas None
     raw_subtitle = data.get('subtitle')
-    if raw_subtitle is None:
-        subtitle = ''
-    else:
-        subtitle = str(raw_subtitle).strip()
+    subtitle = '' if raw_subtitle is None else str(raw_subtitle).strip()
 
-    # 👉 on ne force PAS subtitle à être non vide
     if not application or not title:
-        return jsonify({
-            'status': 'error',
-            'message': 'application and title are required.'
-        }), 400
+        return jsonify({'status': 'error','message': 'application and title are required.'}), 400
 
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
+        conn = get_db_connection(); cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO repport (application, title, subtitle)
             VALUES (%s, %s, %s)
         """, (application, title, subtitle))
         conn.commit()
-
-        return jsonify({
-            'status': 'success',
-            'message': 'Repport created successfully.',
-            'data': {
-                'id': cursor.lastrowid,
-                'application': application,
-                'title': title,
-                'subtitle': subtitle
-            }
-        }), 201
-
+        return jsonify({'status':'success','message':'Repport created successfully.',
+                        'data': {'id': cursor.lastrowid,'application':application,'title':title,'subtitle':subtitle}}), 201
     except mysql.connector.Error as err:
-        # 1062 = duplicate entry
         if err.errno == 1062:
-            return jsonify({
-                'status': 'error',
-                'message': 'This title/subtitle already exists for this application.'
-            }), 409
-
+            return jsonify({'status':'error','message':'This title/subtitle already exists for this application.'}), 409
         current_app.logger.exception(f"[DB] Error in create_repport: {err}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Database error.'
-        }), 500
-
+        return jsonify({'status':'error','message':'Database error.'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @bp.route('/repport', methods=['DELETE'])
 def delete_repport():
     data = request.get_json(silent=True) or {}
-
     application = (data.get('application') or '').strip()
     title = (data.get('title') or '').strip()
     subtitle = (data.get('subtitle') or '').strip()
-
     if not application or not title:
-        return jsonify({
-            'status': 'error',
-            'message': 'application and title are required.'
-        }), 400
+        return jsonify({'status':'error','message':'application and title are required.'}), 400
 
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
+        conn = get_db_connection(); cursor = conn.cursor()
         if subtitle:
-            # Supprimer UNE ligne précise (titre + sous-titre)
             cursor.execute("""
-                DELETE FROM repport
-                WHERE application = %s AND title = %s AND subtitle = %s
+                DELETE FROM repport WHERE application=%s AND title=%s AND subtitle=%s
             """, (application, title, subtitle))
         else:
-            # Supprimer TOUTES les lignes de ce titre pour cette app
             cursor.execute("""
-                DELETE FROM repport
-                WHERE application = %s AND title = %s
+                DELETE FROM repport WHERE application=%s AND title=%s
             """, (application, title))
-
-        deleted = cursor.rowcount
-        conn.commit()
-
+        deleted = cursor.rowcount; conn.commit()
         if deleted == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'No repport found for given application/title/subtitle.'
-            }), 404
-
-        # ON DELETE CASCADE : toutes les questions + options liées sont aussi supprimées
-        return jsonify({
-            'status': 'success',
-            'message': f'{deleted} repport row(s) deleted.',
-            'deleted_rows': deleted
-        }), 200
-
+            return jsonify({'status':'error','message':'No repport found for given application/title/subtitle.'}), 404
+        return jsonify({'status':'success','message':f'{deleted} repport row(s) deleted.','deleted_rows':deleted}), 200
     except mysql.connector.Error as err:
         current_app.logger.exception(f"[DB] Error in delete_repport: {err}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Database error.'
-        }), 500
-
+        return jsonify({'status':'error','message':'Database error.'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @bp.route('/repport/questions', methods=['POST'])
 def add_question_to_repport():
     data = request.get_json(silent=True) or {}
-
-    application   = (data.get('application') or '').strip()
-    title         = (data.get('title') or '').strip()
-    subtitle      = (data.get('subtitle') or '').strip()
+    application = (data.get('application') or '').strip()
+    title       = (data.get('title') or '').strip()
+    subtitle    = (data.get('subtitle') or '').strip()
     question_text = (data.get('question_text') or '').strip()
     question_type = (data.get('question_type') or '').strip()
     is_required   = bool(data.get('is_required', False))
-    options       = data.get('options')  # peut être None ou list
+    options       = data.get('options')
 
     if not application or not title or not subtitle:
-        return jsonify({
-            'status': 'error',
-            'message': 'application, title and subtitle are required.'
-        }), 400
-
-    if not question_text or question_type not in ('open', 'qcm', 'yes_no'):
-        return jsonify({
-            'status': 'error',
-            'message': 'question_text is required and question_type must be open, qcm or yes_no.'
-        }), 400
-
+        return jsonify({'status':'error','message':'application, title and subtitle are required.'}), 400
+    if not question_text or question_type not in ('open','qcm','yes_no'):
+        return jsonify({'status':'error','message':'question_text is required and question_type must be open, qcm or yes_no.'}), 400
     if question_type == 'qcm':
         if not isinstance(options, list) or len(options) == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'For qcm questions, a non-empty options array is required.'
-            }), 400
+            return jsonify({'status':'error','message':'For qcm questions, a non-empty options array is required.'}), 400
 
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # 1) Récupérer repport_id
+        conn = get_db_connection(); cursor = conn.cursor()
         cursor.execute("""
-            SELECT id FROM repport
-            WHERE application = %s AND title = %s AND subtitle = %s
-            LIMIT 1
+            SELECT id FROM repport WHERE application=%s AND title=%s AND subtitle=%s LIMIT 1
         """, (application, title, subtitle))
         row = cursor.fetchone()
         if not row:
-            return jsonify({
-                'status': 'error',
-                'message': 'No repport found for given application/title/subtitle.'
-            }), 404
-
+            return jsonify({'status':'error','message':'No repport found for given application/title/subtitle.'}), 404
         repport_id = row[0]
 
-        # 2) Insérer la question
         cursor.execute("""
             INSERT INTO questions_repport (repport_id, question_text, question_type, is_required)
             VALUES (%s, %s, %s, %s)
         """, (repport_id, question_text, question_type, is_required))
         question_id = cursor.lastrowid
 
-        # 3) Si QCM → insérer les options
         if question_type == 'qcm':
-            option_rows = [(question_id, (opt or '').strip())
-                           for opt in options if (opt or '').strip()]
+            option_rows = [(question_id, (opt or '').strip()) for opt in options if (opt or '').strip()]
             if option_rows:
-                cursor.executemany("""
-                    INSERT INTO question_options (question_id, option_text)
-                    VALUES (%s, %s)
-                """, option_rows)
+                cursor.executemany("INSERT INTO question_options (question_id, option_text) VALUES (%s, %s)", option_rows)
 
         conn.commit()
-
-        return jsonify({
-            'status': 'success',
-            'message': 'Question created successfully.',
-            'data': {
-                'question_id': question_id,
-                'repport_id': repport_id,
-                'question_type': question_type
-            }
-        }), 201
-
+        return jsonify({'status':'success','message':'Question created successfully.',
+                        'data': {'question_id':question_id,'repport_id':repport_id,'question_type':question_type}}), 201
     except mysql.connector.Error as err:
         current_app.logger.exception(f"[DB] Error in add_question_to_repport: {err}")
         conn.rollback()
-        return jsonify({
-            'status': 'error',
-            'message': 'Database error.'
-        }), 500
-
+        return jsonify({'status':'error','message':'Database error.'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @bp.route('/repport/questions/<int:question_id>', methods=['DELETE'])
 def delete_repport_question(question_id):
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            DELETE FROM questions_repport
-            WHERE id = %s
-        """, (question_id,))
-        deleted = cursor.rowcount
-        conn.commit()
-
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute("DELETE FROM questions_repport WHERE id=%s", (question_id,))
+        deleted = cursor.rowcount; conn.commit()
         if deleted == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'Question not found.'
-            }), 404
-
-        return jsonify({
-            'status': 'success',
-            'message': 'Question deleted successfully.',
-            'deleted_rows': deleted
-        }), 200
-
+            return jsonify({'status':'error','message':'Question not found.'}), 404
+        return jsonify({'status':'success','message':'Question deleted successfully.','deleted_rows':deleted}), 200
     except mysql.connector.Error as err:
         current_app.logger.exception(f"[DB] Error in delete_repport_question: {err}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Database error.'
-        }), 500
-
+        return jsonify({'status':'error','message':'Database error.'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
-
-
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @bp.route('/repport/titles', methods=['GET'])
 def get_titles_by_application():
     application = (request.args.get('application') or '').strip()
-
     if not application:
-        return jsonify({
-            'status': 'error',
-            'message': 'Query param "application" is required.'
-        }), 400
+        return jsonify({'status':'error','message':'Query param "application" is required.'}), 400
 
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
+        conn = get_db_connection(); cursor = conn.cursor()
         cursor.execute("""
-            SELECT DISTINCT title
-            FROM repport
-            WHERE application = %s
-            ORDER BY title ASC
+            SELECT DISTINCT title FROM repport WHERE application=%s ORDER BY title ASC
         """, (application,))
-
         rows = cursor.fetchall()
         titles = [r[0] for r in rows]
-
-        return jsonify({
-            'status': 'success',
-            'data': {
-                'application': application,
-                'titles': titles
-            }
-        }), 200
-
+        return jsonify({'status':'success','data':{'application':application,'titles':titles}}), 200
     except mysql.connector.Error as err:
         current_app.logger.exception(f"[DB] Error in get_titles_by_application: {err}")
-        return jsonify({'status': 'error', 'message': 'Database error.'}), 500
-
+        return jsonify({'status':'error','message':'Database error.'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @bp.route('/repport/subtitles', methods=['GET'])
 def get_subtitles_by_app_and_title():
     application = (request.args.get('application') or '').strip()
     title = (request.args.get('title') or '').strip()
-
     if not application or not title:
-        return jsonify({
-            'status': 'error',
-            'message': 'Query params "application" and "title" are required.'
-        }), 400
+        return jsonify({'status':'error','message':'Query params "application" and "title" are required.'}), 400
 
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
+        conn = get_db_connection(); cursor = conn.cursor()
         cursor.execute("""
             SELECT DISTINCT subtitle
             FROM repport
-            WHERE application = %s
-              AND title = %s
-              AND subtitle <> ''     -- ⚠️ on cache la ligne "title seul"
+            WHERE application=%s AND title=%s AND subtitle <> ''
             ORDER BY subtitle ASC
         """, (application, title))
-
         rows = cursor.fetchall()
         subtitles = [r[0] for r in rows]
-
-        # même s'il n'y a aucun sous-titre, on renvoie 200 + []
-        return jsonify({
-            'status': 'success',
-            'data': {
-                'application': application,
-                'title': title,
-                'subtitles': subtitles
-            }
-        }), 200
-
+        return jsonify({'status':'success','data':{'application':application,'title':title,'subtitles':subtitles}}), 200
     except Exception as err:
         current_app.logger.exception(f"[DB] Error in get_subtitles_by_app_and_title: {err}")
-        return jsonify({'status': 'error', 'message': 'Database error.'}), 500
-
+        return jsonify({'status':'error','message':'Database error.'}), 500
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 @bp.route('/repport/questions', methods=['GET'])
 def get_questions_by_app_title_subtitle():
     application = (request.args.get('application') or '').strip()
-    title = (request.args.get('title') or '').strip()
-    subtitle = (request.args.get('subtitle') or '').strip()
-
+    title       = (request.args.get('title') or '').strip()
+    subtitle    = (request.args.get('subtitle') or '').strip()
     if not application or not title or not subtitle:
-        return jsonify({
-            'status': 'error',
-            'message': 'Query params "application", "title" and "subtitle" are required.'
-        }), 400
+        return jsonify({'status':'error','message':'Query params "application", "title" and "subtitle" are required.'}), 400
 
-    conn = None
-    cursor = None
+    conn = cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)  # pour avoir des dicts
-
-        # 1) Récupérer le repport_id
+        conn = get_db_connection(); cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT id
-            FROM repport
-            WHERE application = %s AND title = %s AND subtitle = %s
-            LIMIT 1
+            SELECT id FROM repport WHERE application=%s AND title=%s AND subtitle=%s LIMIT 1
         """, (application, title, subtitle))
         repport_row = cursor.fetchone()
-
         if not repport_row:
-            return jsonify({
-                'status': 'error',
-                'message': 'No repport found for given application/title/subtitle.'
-            }), 404
-
+            return jsonify({'status':'error','message':'No repport found for given application/title/subtitle.'}), 404
         repport_id = repport_row['id']
 
-        # 2) Récupérer questions + options (LEFT JOIN pour garder les questions même sans option)
         cursor.execute("""
             SELECT 
-                q.id AS question_id,
-                q.question_text,
-                q.question_type,
-                q.is_required,
-                o.id AS option_id,
-                o.option_text
+              q.id AS question_id, q.question_text, q.question_type, q.is_required,
+              o.id AS option_id, o.option_text
             FROM questions_repport q
             LEFT JOIN question_options o ON o.question_id = q.id
             WHERE q.repport_id = %s
             ORDER BY q.id ASC, o.id ASC
         """, (repport_id,))
-
         rows = cursor.fetchall()
 
-        # 3) On regroupe par question
-        questions_map = {}  # question_id -> question dict
-
+        questions_map = {}
         for row in rows:
             qid = row['question_id']
             if qid not in questions_map:
@@ -4333,27 +4120,188 @@ def get_questions_by_app_title_subtitle():
                     'is_required': bool(row['is_required']),
                     'options': []
                 }
-            # Ajouter option si existe
             if row['option_id'] is not None and row['option_text'] is not None:
                 questions_map[qid]['options'].append(row['option_text'])
 
-        questions_list = list(questions_map.values())
+        return jsonify({'status':'success','data':{
+            'application': application, 'title': title, 'subtitle': subtitle,
+            'repport_id': repport_id, 'questions': list(questions_map.values())
+        }}), 200
+    except mysql.connector.Error as err:
+        current_app.logger.exception(f"[DB] Error in get_questions_by_app_title_subtitle: {err}")
+        return jsonify({'status':'error','message':'Database error.'}), 500
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
 
+# ========================
+# SOUMETTRE UN RAPPORT
+# ========================
+@bp.route('/repport/submit', methods=['POST'])
+def submit_repport():
+    """
+    Soumet les réponses d'un rapport et les sauvegarde en base
+    """
+    data = request.get_json(silent=True) or {}
+    
+    application = (data.get('application') or '').strip()
+    title = (data.get('title') or '').strip()
+    subtitle = (data.get('subtitle') or '').strip()
+    username = (data.get('username') or '').strip()
+    qr_code = (data.get('qr_code') or '').strip()
+    answers = data.get('answers')  # dict avec {question_id: reponse}
+    
+    if not application or not title or not subtitle:
+        return jsonify({
+            'status': 'error',
+            'message': 'application, title, subtitle are required.'
+        }), 400
+
+    if not username or not qr_code:
+        return jsonify({
+            'status': 'error',
+            'message': 'username and qr_code are required.'
+        }), 400
+
+    if not answers or not isinstance(answers, dict):
+        return jsonify({
+            'status': 'error',
+            'message': 'answers object is required.'
+        }), 400
+    
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1) Vérifier que le repport existe
+        cursor.execute("""
+            SELECT id FROM repport
+            WHERE application = %s AND title = %s AND subtitle = %s
+            LIMIT 1
+        """, (application, title, subtitle))
+        row = cursor.fetchone()
+        
+        if not row:
+            return jsonify({
+                'status': 'error',
+                'message': 'Repport not found.'
+            }), 404
+        
+        repport_id = row[0]
+        
+        # 2) Insérer la soumission
+        import json
+        answers_json = json.dumps(answers)
+        
+        cursor.execute("""
+            INSERT INTO report_submissions 
+            (repport_id, application, username, qr_code, answers_json, status)
+            VALUES (%s, %s, %s, %s, %s, 'submitted')
+        """, (repport_id, application, username, qr_code, answers_json))
+        
+        submission_id = cursor.lastrowid
+        conn.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Repport submitted successfully.',
+            'data': {
+                'submission_id': submission_id,
+                'repport_id': repport_id,
+                'submitted_at': datetime.now().isoformat()
+            }
+        }), 201
+    
+    except mysql.connector.Error as err:
+        current_app.logger.exception(f"[DB] Error in submit_repport: {err}")
+        conn.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'Database error.'
+        }), 500
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# ========================
+# RÉCUPÉRER L'HISTORIQUE
+# ========================
+@bp.route('/repport/history', methods=['GET'])
+def get_repport_history():
+    """
+    Récupère l'historique de tous les rapports soumis pour une app
+    Filtrable par username et qr_code
+    """
+    application = (request.args.get('application') or '').strip()
+    username = (request.args.get('username') or '').strip()
+    qr_code = (request.args.get('qr_code') or '').strip()
+    
+    if not application:
+        return jsonify({
+            'status': 'error',
+            'message': 'Query param "application" is required.'
+        }), 400
+    
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Construire la requête dynamiquement
+        query = "SELECT * FROM report_submissions WHERE application = %s"
+        params = [application]
+        
+        if username:
+            query += " AND username = %s"
+            params.append(username)
+        
+        if qr_code:
+            query += " AND qr_code = %s"
+            params.append(qr_code)
+        
+        query += " ORDER BY submitted_at DESC"
+        
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        
+        # Parser les answers_json
+        import json
+        for row in rows:
+            if row['answers_json']:
+                try:
+                    row['answers'] = json.loads(row['answers_json'])
+                except:
+                    row['answers'] = {}
+            else:
+                row['answers'] = {}
+            
+            # Formater la date
+            if row['submitted_at']:
+                row['submitted_at'] = row['submitted_at'].isoformat()
+        
         return jsonify({
             'status': 'success',
             'data': {
                 'application': application,
-                'title': title,
-                'subtitle': subtitle,
-                'repport_id': repport_id,
-                'questions': questions_list
+                'submissions': rows,
+                'total': len(rows)
             }
         }), 200
-
-    except mysql.connector.Error as err:
-        current_app.logger.exception(f"[DB] Error in get_questions_by_app_title_subtitle: {err}")
-        return jsonify({'status': 'error', 'message': 'Database error.'}), 500
-
+    
+    except Exception as err:
+        current_app.logger.exception(f"[DB] Error in get_repport_history: {err}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Database error.'
+        }), 500
+    
     finally:
         if cursor:
             cursor.close()

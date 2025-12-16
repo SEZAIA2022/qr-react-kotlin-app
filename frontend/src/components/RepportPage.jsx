@@ -427,7 +427,7 @@ const RepportPage = () => {
 
   return (
     <div className="repport-page container card card--panel">
-      <h1 className="title text-center">Repport Management</h1>
+      <h1 className="title text-center">Report Management</h1>
 
       {/* BOX : ajouter un TITLE (seulement) */}
       <div className="card add-question-section">

@@ -1,0 +1,20 @@
+[0;1;32m●[0m myapp-backend.service - Gunicorn for QR React Kotlin App (Flask backend)
+     Loaded: loaded (/etc/systemd/system/myapp-backend.service; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (running)[0m since Sat 2025-12-13 15:40:42 UTC; 1min 27s ago
+   Main PID: 2145329 (gunicorn)
+      Tasks: 4 (limit: 4604)
+     Memory: 154.3M
+        CPU: 1.821s
+     CGroup: /system.slice/myapp-backend.service
+             ├─2145329 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/python3 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/gunicorn -w 3 -b 127.0.0.1:8000 wsgi:app
+             ├─2145332 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/python3 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/gunicorn -w 3 -b 127.0.0.1:8000 wsgi:app
+             ├─2145333 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/python3 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/gunicorn -w 3 -b 127.0.0.1:8000 wsgi:app
+             └─2145334 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/python3 /opt/myapp/qr-react-kotlin-app/backend/venv/bin/gunicorn -w 3 -b 127.0.0.1:8000 wsgi:app
+
+Dec 13 15:40:42 ubuntu systemd[1]: Started Gunicorn for QR React Kotlin App (Flask backend).
+Dec 13 15:40:42 ubuntu gunicorn[2145329]: [2025-12-13 15:40:42 +0000] [2145329] [INFO] Starting gunicorn 23.0.0
+Dec 13 15:40:42 ubuntu gunicorn[2145329]: [2025-12-13 15:40:42 +0000] [2145329] [INFO] Listening at: http://127.0.0.1:8000 (2145329)
+Dec 13 15:40:42 ubuntu gunicorn[2145329]: [2025-12-13 15:40:42 +0000] [2145329] [INFO] Using worker: sync
+Dec 13 15:40:42 ubuntu gunicorn[2145332]: [2025-12-13 15:40:42 +0000] [2145332] [INFO] Booting worker with pid: 2145332
+Dec 13 15:40:42 ubuntu gunicorn[2145333]: [2025-12-13 15:40:42 +0000] [2145333] [INFO] Booting worker with pid: 2145333
+Dec 13 15:40:43 ubuntu gunicorn[2145334]: [2025-12-13 15:40:43 +0000] [2145334] [INFO] Booting worker with pid: 2145334
