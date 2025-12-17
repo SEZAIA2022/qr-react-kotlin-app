@@ -4320,52 +4320,39 @@ def get_repport_history():
 
 
 
-@bp.route('/repport/meta/by-question-id', methods=['GET'])
-def get_repport_meta_by_question_id():
-    question_id = request.args.get('question_id', type=int)
+@bp.route('/repport/meta/by-question-ids', methods=['GET'])
+def get_repport_meta_by_question_ids():
+    question_ids_raw = (request.args.get('question_ids') or '').strip()
+    if not question_ids_raw:
+        return jsonify({'status':'error','message':'question_ids is required.'}), 400
 
-    if not question_id:
-        return jsonify({
-            'status': 'error',
-            'message': 'Query param "question_id" is required.'
-        }), 400
-
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        ids = [int(x) for x in question_ids_raw.split(',') if x.strip().isdigit()]
+    except:
+        ids = []
 
-        cursor.execute("""
-            SELECT 
-                r.id AS repport_id,
-                r.application,
-                r.title,
-                r.subtitle
+    if not ids:
+        return jsonify({'status':'error','message':'No valid question ids.'}), 400
+
+    placeholders = ",".join(["%s"] * len(ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(f"""
+            SELECT
+              q.id AS question_id,
+              r.id AS repport_id,
+              r.application,
+              r.title,
+              r.subtitle
             FROM questions_repport q
             JOIN repport r ON r.id = q.repport_id
-            WHERE q.id = %s
-            LIMIT 1
-        """, (question_id,))
+            WHERE q.id IN ({placeholders})
+        """, tuple(ids))
 
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({
-                'status': 'error',
-                'message': 'Question not found.'
-            }), 404
-
-        return jsonify({
-            'status': 'success',
-            'data': row
-        }), 200
-
-    except Exception as err:
-        current_app.logger.exception(f"[DB] Error in get_repport_meta_by_question_id: {err}")
-        return jsonify({'status': 'error', 'message': 'Database error.'}), 500
-
+        rows = cursor.fetchall()
+        return jsonify({'status':'success','data': rows}), 200
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        cursor.close()
+        conn.close()
