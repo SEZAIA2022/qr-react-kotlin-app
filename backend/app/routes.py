@@ -1866,6 +1866,7 @@ def add_qr():
     data = request.json
 
     username = data.get('username')
+    serial_number = data.get('serial_number')
     qr_id = data.get('qr_id')
     qr_code = data.get('qr_code')
     country = data.get('country')
@@ -1874,7 +1875,7 @@ def add_qr():
     street = data.get('street')
     exact_location = data.get('exact_location')
     # Vérification des champs obligatoires
-    required_fields = [username,qr_id, qr_code, country, city, zone, street, exact_location]
+    required_fields = [username, serial_number, qr_id, qr_code, country, city, zone, street, exact_location]
     if not all(required_fields):
         return jsonify({'status': 'error', 'message': 'All fields are required'}), 400
 
@@ -1887,6 +1888,7 @@ def add_qr():
             UPDATE qr_codes
             SET 
                 user = %s,
+                serial_number = %s,
                 qr_id = %s,
                 country = %s,
                 city = %s,
@@ -1897,6 +1899,7 @@ def add_qr():
             WHERE qr_code = %s
         """, (
             username,
+            serial_number,
             qr_id,
             country,
             city,
@@ -4197,7 +4200,7 @@ def submit_repport():
         
         cursor.execute("""
             INSERT INTO report_submissions 
-            (repport_id, application, username, qr_code, answers_json, status)
+            (repport_id, application, tech_user, qr_code, answers_json, status)
             VALUES (%s, %s, %s, %s, %s, 'submitted')
         """, (repport_id, application, username, qr_code, answers_json))
         
@@ -4239,13 +4242,12 @@ def get_repport_history():
     Filtrable par username et qr_code
     """
     application = (request.args.get('application') or '').strip()
-    username = (request.args.get('username') or '').strip()
     qr_code = (request.args.get('qr_code') or '').strip()
     
-    if not application:
+    if not application or not qr_code:
         return jsonify({
             'status': 'error',
-            'message': 'Query param "application" is required.'
+            'message': 'application and qr_code are required.'
         }), 400
     
     conn = None
@@ -4253,20 +4255,23 @@ def get_repport_history():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        
+
+        cursor.execute("SELECT user, qr_id, serial_number FROM qr_codes WHERE application = %s AND qr_code = %s", (application, qr_code))
+        qr_row = cursor.fetchone()
+        if not qr_row:
+            return jsonify({
+                'status': 'error',
+                'message': 'QR code not found for the given application.'
+            }), 404
+        username = qr_row['user']
+        qr_id = qr_row['qr_id']
+        serial_number = qr_row['serial_number']
+
         # Construire la requête dynamiquement
-        query = "SELECT * FROM report_submissions WHERE application = %s"
-        params = [application]
+        query = "SELECT * FROM report_submissions WHERE application = %s AND qr_code = %s ORDER BY submitted_at DESC"
+        params = [application, qr_code]
         
-        if username:
-            query += " AND username = %s"
-            params.append(username)
         
-        if qr_code:
-            query += " AND qr_code = %s"
-            params.append(qr_code)
-        
-        query += " ORDER BY submitted_at DESC"
         
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
@@ -4290,10 +4295,15 @@ def get_repport_history():
             'status': 'success',
             'data': {
                 'application': application,
+                'username': username,   
+                'qr_id': qr_id,  
+                'serial_number': serial_number,       
+                'qr_code': qr_code,    
                 'submissions': rows,
                 'total': len(rows)
             }
         }), 200
+
     
     except Exception as err:
         current_app.logger.exception(f"[DB] Error in get_repport_history: {err}")
@@ -4302,6 +4312,58 @@ def get_repport_history():
             'message': 'Database error.'
         }), 500
     
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+
+@bp.route('/repport/meta/by-question-id', methods=['GET'])
+def get_repport_meta_by_question_id():
+    question_id = request.args.get('question_id', type=int)
+
+    if not question_id:
+        return jsonify({
+            'status': 'error',
+            'message': 'Query param "question_id" is required.'
+        }), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT 
+                r.id AS repport_id,
+                r.application,
+                r.title,
+                r.subtitle
+            FROM questions_repport q
+            JOIN repport r ON r.id = q.repport_id
+            WHERE q.id = %s
+            LIMIT 1
+        """, (question_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({
+                'status': 'error',
+                'message': 'Question not found.'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'data': row
+        }), 200
+
+    except Exception as err:
+        current_app.logger.exception(f"[DB] Error in get_repport_meta_by_question_id: {err}")
+        return jsonify({'status': 'error', 'message': 'Database error.'}), 500
+
     finally:
         if cursor:
             cursor.close()
