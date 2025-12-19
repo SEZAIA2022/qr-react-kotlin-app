@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { jsPDF } from "jspdf";
+
 
 const LIMIT = 12; // 12 éléments par page
 
@@ -48,8 +50,12 @@ const QrGenerator = () => {
         application,
         size: qrSize,
       });
-      setResults(res.data || []);
+      const generated = res.data || [];
+      setResults(generated);
       setShowHistory(false);
+
+
+
     } catch {
       setErrorMsg('Error generating QR codes. Please try again.');
     } finally {
@@ -154,6 +160,117 @@ const QrGenerator = () => {
   const pageHistory = history.slice(histStart, histEnd);
 
   const msgClass = errorMsg ? 'message message--error' : 'message message--info';
+  // Convertit cm -> mm
+const cmToMm = (cm) => cm * 10;
+
+// Charge une image depuis ton API en BLOB (évite les soucis CORS/canvas)
+const loadImageAsDataURL = async (url) => {
+  const resp = await fetch(url, { mode: "cors" }); // ton backend doit autoriser CORS
+  if (!resp.ok) throw new Error("Failed to load image: " + url);
+
+  const blob = await resp.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result); // dataURL
+    reader.readAsDataURL(blob);
+  });
+};
+
+const downloadSingleQrPdf = async (qr) => {
+  try {
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    const pageW = pdf.internal.pageSize.getWidth();   // 210
+    const pageH = pdf.internal.pageSize.getHeight();  // 297
+
+    const sizeCm = qr.size_cm ?? qrSize;
+    const qrMm = cmToMm(sizeCm);
+
+    const imgUrl = `${process.env.REACT_APP_API_URL}${qr.image_path}?v=${qr.code}`;
+    const dataUrl = await loadImageAsDataURL(imgUrl);
+
+    // centrer le QR
+    const x = (pageW - qrMm) / 2;
+    const y = 45; // marge top (tu peux ajuster)
+
+    pdf.addImage(dataUrl, "PNG", x, y, qrMm, qrMm);
+
+    // texte dessous
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(14);
+    pdf.text("Assist by scan", pageW / 2, y + qrMm + 12, { align: "center" });
+
+    pdf.save(`${qr.code}.pdf`);
+  } catch (e) {
+    console.error(e);
+    setErrorMsg("Single PDF download failed. Check CORS / image access.");
+  }
+};
+
+
+const exportQrsToA4Pdf = async (qrList, sizeCm) => {
+  if (!qrList?.length) return;
+
+  setErrorMsg("");
+  try {
+    // A4 portrait en millimètres
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    const pageW = pdf.internal.pageSize.getWidth();   // 210
+    const pageH = pdf.internal.pageSize.getHeight();  // 297
+
+    const margin = 10;   // mm
+    const gap = 4;       // mm (espace entre QR)
+
+    const qrMm = cmToMm(sizeCm); // taille QR en mm
+
+    // Calcul colonnes / lignes qui rentrent sur A4
+    const usableW = pageW - margin * 2;
+    const usableH = pageH - margin * 2;
+
+    const cols = Math.max(1, Math.floor((usableW + gap) / (qrMm + gap)));
+    const rows = Math.max(1, Math.floor((usableH + gap) / (qrMm + gap)));
+    const perPage = cols * rows;
+
+    // Option: centrer la grille
+    const gridW = cols * qrMm + (cols - 1) * gap;
+    const gridH = rows * qrMm + (rows - 1) * gap;
+    const startX = margin + (usableW - gridW) / 2;
+    const startY = margin + (usableH - gridH) / 2;
+
+    // On ajoute page par page
+    for (let i = 0; i < qrList.length; i++) {
+      const indexInPage = i % perPage;
+
+      // Nouvelle page si nécessaire (sauf au début)
+      if (i > 0 && indexInPage === 0) pdf.addPage();
+
+      const r = Math.floor(indexInPage / cols);
+      const c = indexInPage % cols;
+
+      const x = startX + c * (qrMm + gap);
+      const y = startY + r * (qrMm + gap);
+
+      const imgUrl = `${process.env.REACT_APP_API_URL}${qrList[i].image_path}?v=${qrList[i].code}`;
+      const dataUrl = await loadImageAsDataURL(imgUrl);
+
+      // Ajout image (PNG) dans le PDF
+      pdf.addImage(dataUrl, "PNG", x, y, qrMm, qrMm);
+      const label = "Assist by scan";
+      pdf.setFont("helvetica", "italic");
+      pdf.setFontSize(9);
+      pdf.text(label, x + qrMm / 2, y + qrMm + 4, { align: "center" });
+
+    }
+
+    const filename = `QR_${application || "app"}_${sizeCm}cm_${Date.now()}.pdf`;
+    pdf.save(filename);
+  } catch (e) {
+    console.error(e);
+    setErrorMsg("PDF export failed. Check CORS / image access.");
+  }
+};
 
   return (
     <div className="container--xl card card--panel">
@@ -227,6 +344,16 @@ const QrGenerator = () => {
 
           {results.length > 0 && (
             <>
+              {/* Bouton PDF A4 */}
+              <div style={{ textAlign: "center", margin: "16px 0" }}>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => exportQrsToA4Pdf(results, qrSize)}
+                >
+                  📄 Download A4 PDF
+                </button>
+              </div>
               {/* Pagination haut */}
               <div className="pagination">
                 <button
@@ -261,19 +388,13 @@ const QrGenerator = () => {
                       />
                     </div>
                     <button
-                      type="button"
-                      className="download-btn"
-                      onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = `${process.env.REACT_APP_API_URL}${qr.image_path}`;
-                        link.download = `${qr.code}.png`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                      }}
-                    >
-                      Download
-                    </button>
+                        type="button"
+                        className="download-btn"
+                        onClick={() => downloadSingleQrPdf(qr)}
+                      >
+                        Download PDF
+                      </button>
+
                   </div>
                 ))}
               </div>

@@ -477,3 +477,12 @@ margin-bottom: 12px;
   color: var(--text-light);
   font-size: 0.9rem;
 }
+
+.qr-caption{
+  margin-top: 8px;
+  font-style: italic;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  text-align: center;
+  opacity: .85;
+}
