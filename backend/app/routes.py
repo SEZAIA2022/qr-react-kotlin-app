@@ -4324,6 +4324,7 @@ def get_repport_history():
 def get_repport_history_all():
     """
     Récupère l'historique de tous les rapports soumis pour une app
+    + ajoute username/qr_id/serial_number depuis qr_codes
     """
     application = (request.args.get('application') or '').strip()
 
@@ -4335,35 +4336,46 @@ def get_repport_history_all():
 
     conn = None
     cursor = None
-
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute(
-            """
-            SELECT *
-            FROM report_submissions
-            WHERE application = %s
-            ORDER BY submitted_at DESC
-            """,
-            (application,)
-        )
+        query = """
+            SELECT
+                rs.*,
+                qc.user AS username,
+                qc.qr_id AS qr_id,
+                qc.serial_number AS serial_number
+            FROM report_submissions rs
+            LEFT JOIN qr_codes qc
+                ON qc.application = rs.application
+               AND qc.qr_code = rs.qr_code
+            WHERE rs.application = %s
+            ORDER BY rs.submitted_at DESC
+        """
+        cursor.execute(query, (application,))
         rows = cursor.fetchall()
 
+        import json
         for row in rows:
-            answers_json = row.get('answers_json')
-            if answers_json:
+            if row.get('answers_json'):
                 try:
-                    row['answers'] = json.loads(answers_json)
+                    row['answers'] = json.loads(row['answers_json'])
                 except Exception:
                     row['answers'] = {}
             else:
                 row['answers'] = {}
 
-            submitted_at = row.get('submitted_at')
-            if submitted_at:
-                row['submitted_at'] = submitted_at.isoformat()
+            if row.get('submitted_at'):
+                row['submitted_at'] = row['submitted_at'].isoformat()
+
+            # sécuriser si pas trouvé dans qr_codes
+            if not row.get('username'):
+                row['username'] = ''
+            if not row.get('qr_id'):
+                row['qr_id'] = ''
+            if not row.get('serial_number'):
+                row['serial_number'] = ''
 
         return jsonify({
             'status': 'success',
@@ -4375,19 +4387,20 @@ def get_repport_history_all():
         }), 200
 
     except Exception as err:
-        current_app.logger.exception(f"[DB] Error in get_repport_history_all: {err}")
+        current_app.logger.exception(
+            f"[DB] Error in get_repport_history_all: {err}"
+        )
         return jsonify({
             'status': 'error',
             'message': 'Database error.'
         }), 500
 
     finally:
-        try:
-            if cursor:
-                cursor.close()
-        finally:
-            if conn:
-                conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 
 

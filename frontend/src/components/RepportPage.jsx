@@ -896,7 +896,7 @@ const RepportPage = () => {
 
                     <div className="btn-row right mt-10" style={{ gap: 8, display: "flex" }}>
                       <button className="btn btn--action" onClick={() => openSubmissionModal(s)}>
-                        👁️ View
+                        View
                       </button>
 
                       <button
@@ -912,7 +912,7 @@ const RepportPage = () => {
                           setModalOpen(true);
                         }}
                       >
-                        📄 Download PDF
+                        Download PDF
                       </button>
                     </div>
                   </div>
@@ -1000,7 +1000,7 @@ const RepportPage = () => {
 
                       <div className="btn-row right mt-10" style={{ display: "flex", gap: 8 }}>
                         <button className="btn btn--primary" onClick={() => downloadPdfForBuiltReport(reportBuilt)}>
-                          📄 Download PDF
+                          Download PDF
                         </button>
                       </div>
                     </div>
@@ -1081,7 +1081,7 @@ const QuestionItem = ({ question, onDelete }) => {
 
       <div className="btn-row right mt-5">
         <button className="btn btn--danger btn--sm" onClick={() => onDelete(id)}>
-          🗑️ Delete
+          Delete
         </button>
       </div>
     </div>
