@@ -4311,12 +4311,86 @@ def get_repport_history():
             'status': 'error',
             'message': 'Database error.'
         }), 500
-    
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
+
+
+
+
+@bp.route('/repport/history/all', methods=['GET'])
+def get_repport_history_all():
+    """
+    Récupère l'historique de tous les rapports soumis pour une app
+    """
+    application = (request.args.get('application') or '').strip()
+
+    if not application:
+        return jsonify({
+            'status': 'error',
+            'message': 'application is required.'
+        }), 400
+
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM report_submissions
+            WHERE application = %s
+            ORDER BY submitted_at DESC
+            """,
+            (application,)
+        )
+        rows = cursor.fetchall()
+
+        for row in rows:
+            answers_json = row.get('answers_json')
+            if answers_json:
+                try:
+                    row['answers'] = json.loads(answers_json)
+                except Exception:
+                    row['answers'] = {}
+            else:
+                row['answers'] = {}
+
+            submitted_at = row.get('submitted_at')
+            if submitted_at:
+                row['submitted_at'] = submitted_at.isoformat()
+
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'application': application,
+                'submissions': rows,
+                'total': len(rows)
+            }
+        }), 200
+
+    except Exception as err:
+        current_app.logger.exception(f"[DB] Error in get_repport_history_all: {err}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Database error.'
+        }), 500
+
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+        finally:
+            if conn:
+                conn.close()
+
+
+
 
 
 
