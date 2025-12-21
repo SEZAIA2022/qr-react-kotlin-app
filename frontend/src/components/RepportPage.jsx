@@ -450,136 +450,160 @@ const RepportPage = () => {
   };
 
   // PDF generator (no PNG)
+  // ===== HTML -> Print (Save as PDF) =====
   const downloadPdfForBuiltReport = (built) => {
     if (!built?.meta?.submission) return;
 
-    const sub = built.meta.submission;
+    const html = buildHtmlFromBuiltReport(built);
 
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 12;
-    const lineGap = 6;
-
-    const safeText = (v) => (v === null || v === undefined || String(v).trim() === "" ? "N/A" : String(v));
-    const wrap = (txt, maxW) => pdf.splitTextToSize(txt, maxW);
-
-    let y = margin;
-
-    const ensureSpace = (needed) => {
-      if (y + needed > pageH - margin) {
-        pdf.addPage();
-        y = margin;
-      }
-    };
-
-    // Header
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(14);
-    pdf.text("Report", margin, y);
-    y += 8;
-
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-
-    const headerLines = [
-      `Submitted: ${formatIso(sub.submitted_at)}`,
-      `QR Code: ${safeText(sub.qr_code)}`,
-      `Technician: ${safeText(sub.tech_user)}`,
-      `Report ID: ${safeText(sub.repport_id)}`,
-      `Status: ${safeText(sub.status)}`,
-    ];
-
-    headerLines.forEach((ln) => {
-      ensureSpace(6);
-      pdf.text(ln, margin, y);
-      y += 6;
-    });
-
-    y += 4;
-
-    // Body groups
-    const groups = built.groups || [];
-    if (!groups.length) {
-      ensureSpace(10);
-      pdf.text("No questions in this submission.", margin, y);
-      y += 10;
-    } else {
-      let lastTitle = null;
-
-      groups.forEach((g) => {
-        // title once
-        if (g.title !== lastTitle) {
-          ensureSpace(10);
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(12);
-          pdf.text(safeText(g.title), margin, y);
-          y += 7;
-          lastTitle = g.title;
-        }
-
-        // subtitle
-        ensureSpace(8);
-        pdf.setFont("helvetica", "italic");
-        pdf.setFontSize(10);
-        pdf.text(safeText(g.subtitle), margin, y);
-        y += 6;
-
-        // table-like rows
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(9);
-
-        const colQ = margin;
-        const colA = pageW * 0.63; // answer column start
-        const maxWQ = colA - margin - 2;
-        const maxWA = pageW - margin - colA;
-
-        // header row
-        ensureSpace(8);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Question", colQ, y);
-        pdf.text("Answer", colA, y);
-        y += 5;
-
-        pdf.setFont("helvetica", "normal");
-
-        (g.questions || []).forEach((q) => {
-          const qTxt = `${safeText(q.question_text)} (${safeText(q.question_type)})`;
-          const aTxt = safeText(q.answer) === "N/A" || safeText(q.answer) === "" ? "Unanswered" : safeText(q.answer);
-
-          const qLines = wrap(qTxt, maxWQ);
-          const aLines = wrap(aTxt, maxWA);
-
-          const rowLines = Math.max(qLines.length, aLines.length);
-          const rowH = rowLines * 4 + 2;
-
-          ensureSpace(rowH + 2);
-
-          // draw texts line by line
-          for (let i = 0; i < rowLines; i++) {
-            const lq = qLines[i] || "";
-            const la = aLines[i] || "";
-            pdf.text(lq, colQ, y);
-            pdf.text(la, colA, y);
-            y += 4;
-          }
-          y += 2;
-        });
-
-        y += 4;
-      });
+    const w = window.open("", "_blank");
+    if (!w) {
+      alert("Popup blocked. Please allow popups to download the PDF.");
+      return;
     }
 
-    // Footer
-    ensureSpace(18);
-    pdf.setDrawColor(0);
-    pdf.line(margin, pageH - margin - 10, margin + 70, pageH - margin - 10);
-    pdf.setFontSize(9);
-    pdf.text("Signature", margin, pageH - margin - 5);
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
 
-    const filename = `Report_${safeText(sub.qr_code)}_${Date.now()}.pdf`;
-    pdf.save(filename);
+    // attendre que le HTML soit rendu
+    w.onload = () => {
+      w.focus();
+      w.print();
+      // tu peux fermer après print si tu veux:
+      // w.close();
+    };
   };
+
+  const buildHtmlFromBuiltReport = (built) => {
+    const sub = built.meta.submission;
+
+    const esc = (s) =>
+      String(s ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+    const safe = (v) => {
+      const s = String(v ?? "").trim();
+      return s ? s : "N/A";
+    };
+
+    const groups = built.groups || [];
+
+    let body = "";
+    let lastTitle = null;
+
+    groups.forEach((g) => {
+      const title = safe(g.title);
+      const subtitle = safe(g.subtitle);
+
+      // ✅ titre une seule fois
+      if (title !== lastTitle) {
+        body += `<h3 class="h3">${esc(title)}</h3>`;
+        lastTitle = title;
+      }
+
+      // ✅ sous-titre
+      body += `<div class="subtitle">${esc(subtitle)}</div>`;
+
+      // ✅ table (1 table par sous-titre)
+      body += `
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th class="th q">Question</th>
+              <th class="th a">Answer</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      (g.questions || []).forEach((q) => {
+        const qText = safe(q.question_text);
+        const qType = safe(q.question_type);
+        const ans = String(q.answer ?? "").trim() ? String(q.answer).trim() : "Unanswered";
+
+        body += `
+          <tr>
+            <td class="td">
+              <b>${esc(qText)}</b><br/>
+              <span class="qtype">(${esc(qType)})</span>
+            </td>
+            <td class="td">${esc(ans)}</td>
+          </tr>
+        `;
+      });
+
+      body += `
+          </tbody>
+        </table>
+      `;
+    });
+
+    return `
+  <!doctype html>
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Report</title>
+
+    <style>
+      body { font-family: sans-serif; padding: 16px; color: #111; }
+
+      .meta { margin: 4px 0; color: #222; font-size: 16px; }
+      .meta b { font-weight: 700; }
+
+      /* ✅ comme Android: titre = h3 avec margin-top:18px */
+      .h3 { margin-top: 18px; margin-bottom: 8px; font-size: 22px; font-weight: 700; }
+
+      /* ✅ comme Android: sous-titre en gris #555, margin-bottom:8px */
+      .subtitle { color: #555; margin-bottom: 8px; font-size: 16px; }
+
+      /* ✅ table full width + border-collapse */
+      .tbl { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+
+      /* ✅ EXACT Android: padding 8px, gris #f2f2f2, border #ddd, widths 60/40 */
+      .th { text-align: left; padding: 8px; background: #f2f2f2; border: 1px solid #ddd; font-size: 16px; }
+      .th.q { width: 60%; }
+      .th.a { width: 40%; }
+
+      /* ✅ EXACT Android: padding 8px + border */
+      .td { padding: 8px; border: 1px solid #ddd; vertical-align: top; font-size: 16px; }
+      .qtype { color: #666; }
+
+      .footer { margin-top: 24px; }
+      .sigline { margin-top: 24px; border-top: 1px solid #000; width: 260px; }
+      .siglabel { color:#666; font-size:12px; margin-top: 6px; }
+
+      @media print {
+        body { padding: 10mm; }
+        .tbl, tr { page-break-inside: avoid; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="meta"><b>Date:</b> ${esc(formatIso(sub.submitted_at))}</div>
+    <div class="meta"><b>QR ID:</b> ${esc(safe(sub.qr_id))}</div>
+    <div class="meta"><b>Serial Number:</b> ${esc(safe(sub.serial_number))}</div>
+    <div class="meta"><b>Username:</b> ${esc(safe(sub.username))}</div>
+
+    ${body}
+
+    <div class="footer">
+      <div class="meta"><b>Technician:</b> ${esc(safe(sub.tech_user))}</div>
+      <div class="sigline"></div>
+      <div class="siglabel">Signature</div>
+    </div>
+  </body>
+  </html>
+    `;
+  };
+
+
 
   // ============= UI HELPERS =============
   const titleMsgError = /^❌/.test(addTitleMessage);
@@ -889,30 +913,15 @@ const RepportPage = () => {
               <div className="results">
                 {pageHistory.map((s) => (
                   <div key={s.id} className="task card mt-10">
-                    <p className="bold">QR: {s.qr_code}</p>
-                    <p className="muted">
-                      📅 {formatIso(s.submitted_at)} • 👷 {s.tech_user || "Unknown"} • Report ID: {s.repport_id}
-                    </p>
+                    <p className="bold">QR: {s.qr_id} • Serial number: {s.serial_number}</p>
+                    <p className="bold">👤 Client: {s.username || "Unknown"}</p>
+                    <p className="bold">👷 Technicien: {s.tech_user || "Unknown"}</p>
+
+                    <p className="muted">📅 {formatIso(s.submitted_at)}</p>
 
                     <div className="btn-row right mt-10" style={{ gap: 8, display: "flex" }}>
                       <button className="btn btn--action" onClick={() => openSubmissionModal(s)}>
                         View
-                      </button>
-
-                      <button
-                        className="btn btn--primary"
-                        onClick={async () => {
-                          // build report then download
-                          await buildReportForSubmission(s);
-                          // reportBuilt is state, but to avoid timing issues we rebuild locally:
-                          // simplest: open modal already built then download from state
-                          // here we do: open modal then user can download inside OR we do a local build:
-                          // For reliability, we open modal (it builds) then user clicks download.
-                          setSelectedSubmission(s);
-                          setModalOpen(true);
-                        }}
-                      >
-                        Download PDF
                       </button>
                     </div>
                   </div>
@@ -990,12 +999,13 @@ const RepportPage = () => {
                         📅 Submitted: <b>{formatIso(reportBuilt.meta.submission.submitted_at)}</b>
                       </p>
                       <p className="muted" style={{ margin: "6px 0 0 0" }}>
-                        🔷 QR Code: <b>{reportBuilt.meta.submission.qr_code || "N/A"}</b> • 👷 Technician:{" "}
+                        👤 Client: <b>{reportBuilt.meta.submission.username || "N/A"}</b> • 👷 Technician:{" "}
                         <b>{reportBuilt.meta.submission.tech_user || "N/A"}</b>
                       </p>
+
                       <p className="muted" style={{ margin: "6px 0 0 0" }}>
-                        Report ID: <b>{reportBuilt.meta.submission.repport_id || "N/A"}</b> • Status:{" "}
-                        <b>{reportBuilt.meta.submission.status || "N/A"}</b>
+                        🔷 QR ID: <b>{reportBuilt.meta.submission.qr_id || "N/A"}</b> • 🔢 Serial:{" "}
+                        <b>{reportBuilt.meta.submission.serial_number || "N/A"}</b>
                       </p>
 
                       <div className="btn-row right mt-10" style={{ display: "flex", gap: 8 }}>
