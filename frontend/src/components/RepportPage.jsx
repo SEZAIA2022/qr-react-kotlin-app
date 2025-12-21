@@ -82,6 +82,7 @@ const RepportPage = () => {
   const [historyError, setHistoryError] = useState("");
   const [history, setHistory] = useState([]);
   const [pageHist, setPageHist] = useState(0);
+  const [historyQuery, setHistoryQuery] = useState("");
 
   // modal report
   const [modalOpen, setModalOpen] = useState(false);
@@ -112,6 +113,9 @@ const RepportPage = () => {
     setPageHist(0);
   }, [application]);
 
+  useEffect(() => {      
+    setPageHist(0);
+  }, [historyQuery]);
   // ============= API (MANAGE) =============
   const fetchTitles = async () => {
     setLoadingTitles(true);
@@ -615,13 +619,35 @@ const RepportPage = () => {
   const questionMsgError = /^❌/.test(addQuestionMessage);
   const questionMsgClass = questionMsgError ? "message message--error" : "message message--success";
 
-  // history pagination
-  const totalHist = history.length;
+  // ✅ filter + pagination
+  const filteredHistory = useMemo(() => {
+    const q = historyQuery.trim().toLowerCase();
+    if (!q) return history;
+
+    return history.filter((s) => {
+      const username = String(s.username ?? "").toLowerCase();
+      const qrId = String(s.qr_id ?? "").toLowerCase();
+      const serial = String(s.serial_number ?? "").toLowerCase();
+      const tech = String(s.tech_user ?? "").toLowerCase();
+
+      // filtre principal sur username, et bonus sur qr/serial/tech si tu veux
+      return (
+        username.includes(q) ||
+        qrId.includes(q) ||
+        serial.includes(q) ||
+        tech.includes(q)
+      );
+    });
+  }, [history, historyQuery]);
+
+  const totalHist = filteredHistory.length;
   const totalPagesHist = Math.max(1, Math.ceil(totalHist / LIMIT));
   const pageHistClamped = Math.min(pageHist, totalPagesHist - 1);
   const histStart = pageHistClamped * LIMIT;
   const histEnd = Math.min(totalHist, histStart + LIMIT);
-  const pageHistory = history.slice(histStart, histEnd);
+  const pageHistory = filteredHistory.slice(histStart, histEnd);
+
+  
 
   return (
     <div className="repport-page container card card--panel">
@@ -646,6 +672,7 @@ const RepportPage = () => {
             className={`segmented__btn ${tab === "history" ? "active" : ""}`}
             onClick={() => {
               setTab("history");
+              setHistoryQuery("");
               fetchHistoryAll();
             }}
           >
@@ -909,6 +936,30 @@ const RepportPage = () => {
                   Next →
                 </button>
               </div>
+
+
+              <div className="card mt-10" style={{ padding: 12 }}>
+                <label className="label" style={{ display: "block", marginBottom: 6 }}>
+                  Filter by client (username)
+                </label>
+
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Type username… (ex: ehsan)"
+                  value={historyQuery}
+                  onChange={(e) => setHistoryQuery(e.target.value)}
+                />
+
+                {historyQuery.trim() && (
+                  <p className="muted" style={{ marginTop: 8 }}>
+                    Showing <b>{totalHist}</b> result(s)
+                  </p>
+                )}
+              </div>
+
+
+
 
               <div className="results">
                 {pageHistory.map((s) => (
