@@ -486,3 +486,45 @@ margin-bottom: 12px;
   text-align: center;
   opacity: .85;
 }
+
+.file-native{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: inherit;
+}
+
+.file-native__btn{
+  appearance: none;
+  border: 1px solid #cfcfcf;
+  background: #f6f6f6;
+  color: #111;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.file-native__btn:hover{
+  background: #ededed;
+}
+
+.file-native__btn:active{
+  background: #e3e3e3;
+}
+
+.file-native__text{
+  font-size: 14px;
+  color: #333;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.file-native.is-disabled .file-native__btn{
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.file-native.is-disabled .file-native__text{
+  opacity: .6;
+}

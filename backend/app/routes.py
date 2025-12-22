@@ -4,6 +4,7 @@ import smtplib
 import string
 import mysql.connector
 import os
+import time as time_module
 import json
 import random
 import re
@@ -15,9 +16,10 @@ from firebase_admin import messaging, credentials
 from email.message import EmailMessage
 import uuid
 import traceback
+from werkzeug.utils import secure_filename
 
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from .utils import (
     format_number_simple,
     generate_qr_code,
@@ -45,6 +47,79 @@ from .utils import (
 from .database import get_db_connection
 
 bp = Blueprint('main', __name__, url_prefix="/api")
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads", "help_videos")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ 
+
+# pas de current_app.config ici au top-level !
+
+ALLOWED_VIDEO_EXT = {"mp4", "webm", "ogg", "mov", "m4v"}
+
+def allowed_video(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_VIDEO_EXT
+
+# ✅ servir les vidéos via le blueprint (pas app.route)
+@bp.route("/uploads/help_videos/<path:filename>")
+def serve_help_video(filename):
+    folder = current_app.config["UPLOAD_FOLDER_HELP_VIDEOS"]
+    return send_from_directory(folder, filename)
+
+@bp.route("/help_tasks/<int:task_id>/video", methods=["POST"])
+def upload_help_task_video(task_id):
+    if "video" not in request.files:
+        return jsonify({"error": "Missing field 'video' (multipart/form-data)"}), 400
+
+    f = request.files["video"]
+    if not f or f.filename.strip() == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    if not allowed_video(f.filename):
+        return jsonify({"error": "Invalid video format. Allowed: mp4, webm, ogg, mov, m4v"}), 400
+
+    # Vérifier que la task existe
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT id, video_path FROM help_tasks WHERE id=%s", (task_id,))
+    task = cursor.fetchone()
+    if not task:
+        cursor.close(); conn.close()
+        return jsonify({"error": "Help task not found"}), 404
+
+    # Enregistrer fichier (nom unique)
+    safe_name = secure_filename(f.filename)
+    ext = safe_name.rsplit(".", 1)[1].lower()
+    filename = f"task_{task_id}_{int(time_module.time())}.{ext}"
+
+
+    folder = current_app.config["UPLOAD_FOLDER_HELP_VIDEOS"]
+    os.makedirs(folder, exist_ok=True)
+    save_path = os.path.join(folder, filename)
+    f.save(save_path)
+
+    video_url = f"/uploads/help_videos/{filename}"
+
+    # supprimer ancienne vidéo si existe
+    old = (task.get("video_path") or "").strip()
+    if old.startswith("/uploads/help_videos/"):
+        old_name = old.split("/uploads/help_videos/", 1)[1]
+        old_path = os.path.join(folder, old_name)
+        try:
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        except:
+            pass
+
+    # update DB
+    cursor2 = conn.cursor()
+    cursor2.execute("UPDATE help_tasks SET video_path=%s WHERE id=%s", (video_url, task_id))
+    conn.commit()
+
+    cursor2.close()
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "Video uploaded", "video_url": video_url}), 200
 
 @bp.get("/health")
 def health():
@@ -3191,9 +3266,10 @@ def get_help_tasks():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
-        "SELECT id, title_help, help FROM help_tasks WHERE application = %s ORDER BY id ASC",
+        "SELECT id, title_help, help, video_path FROM help_tasks WHERE application = %s ORDER BY id ASC",
         (application,)
     )
+
     tasks = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -3242,7 +3318,7 @@ def add_help_task():
     data = request.get_json()
     title_help = data.get('title_help', '').strip()
     help_text = data.get('help', '').strip()
-    application = (data.get('application_name') or '').strip().lower()
+    application = (data.get('application') or '').strip().lower()
     if not title_help or not help_text:
         return jsonify({"error": "Le titre et le contenu sont obligatoires"}), 400
 
