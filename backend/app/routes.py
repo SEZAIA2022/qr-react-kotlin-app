@@ -2954,20 +2954,22 @@ def delete_problem_type(type_name):
 
 @bp.route("/questions", methods=["POST"])
 def add_question():
-    data = request.get_json()
-    text = data.get("text", "")
-    application = (data.get('application_name') or '').strip().lower()
+    data = request.get_json() or {}
+    text = (data.get("text") or "").strip()
+    application = (data.get("application") or "").strip().lower()
+
+    if not text:
+        return jsonify({"message": "text is required"}), 400
+    if not application:
+        return jsonify({"message": "application is required"}), 400
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Get current max id
     cursor.execute("SELECT MAX(id) FROM questions")
-    max_id = cursor.fetchone()[0]
-    if max_id is None:
-        max_id = 0
+    max_id = cursor.fetchone()[0] or 0
     new_id = max_id + 1
 
-    # Insert question with specified id
     cursor.execute(
         "INSERT INTO questions (id, text, application) VALUES (%s, %s, %s)",
         (new_id, text, application)
