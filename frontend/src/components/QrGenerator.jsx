@@ -214,54 +214,71 @@ const exportQrsToA4Pdf = async (qrList, sizeCm) => {
 
   setErrorMsg("");
   try {
-    // A4 portrait en millimètres
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
     const pageW = pdf.internal.pageSize.getWidth();   // 210
     const pageH = pdf.internal.pageSize.getHeight();  // 297
 
     const margin = 10;   // mm
-    const gap = 4;       // mm (espace entre QR)
+    const gap = 4;       // mm
 
-    const qrMm = cmToMm(sizeCm); // taille QR en mm
+    const qrMm = cmToMm(sizeCm); // ex: 1.5cm => 15mm
 
-    // Calcul colonnes / lignes qui rentrent sur A4
+    // ✅ label settings
+    const label = "Assist by scan";
+    const fontSize = sizeCm <= 1.5 ? 7 : 9;     // petit QR => petit texte
+    const lineHeight = 3.2;                      // mm (approx)
+    const labelTopGap = 2.5;                     // mm sous le QR
+    const labelMaxWidth = qrMm;                  // ✅ wrap dans largeur du QR
+
+    // Pré-calcul: combien de lignes aura le texte (avec wrap)
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(fontSize);
+    const labelLinesExample = pdf.splitTextToSize(label, labelMaxWidth);
+    const labelBlockH = labelLinesExample.length * lineHeight;
+
+    // ✅ Hauteur d’une cellule = QR + espace + label + gap
+    const cellH = qrMm + labelTopGap + labelBlockH + gap;
+    const cellW = qrMm + gap;
+
     const usableW = pageW - margin * 2;
     const usableH = pageH - margin * 2;
 
-    const cols = Math.max(1, Math.floor((usableW + gap) / (qrMm + gap)));
-    const rows = Math.max(1, Math.floor((usableH + gap) / (qrMm + gap)));
+    const cols = Math.max(1, Math.floor((usableW + gap) / cellW));
+    const rows = Math.max(1, Math.floor((usableH + gap) / cellH));
     const perPage = cols * rows;
 
-    // Option: centrer la grille
+    // centrer la grille
     const gridW = cols * qrMm + (cols - 1) * gap;
-    const gridH = rows * qrMm + (rows - 1) * gap;
+    const gridH = rows * (qrMm + labelTopGap + labelBlockH) + (rows - 1) * gap;
+
     const startX = margin + (usableW - gridW) / 2;
     const startY = margin + (usableH - gridH) / 2;
 
-    // On ajoute page par page
     for (let i = 0; i < qrList.length; i++) {
       const indexInPage = i % perPage;
 
-      // Nouvelle page si nécessaire (sauf au début)
       if (i > 0 && indexInPage === 0) pdf.addPage();
 
       const r = Math.floor(indexInPage / cols);
       const c = indexInPage % cols;
 
       const x = startX + c * (qrMm + gap);
-      const y = startY + r * (qrMm + gap);
+      const y = startY + r * (qrMm + labelTopGap + labelBlockH + gap);
 
       const imgUrl = `${process.env.REACT_APP_API_URL}${qrList[i].image_path}?v=${qrList[i].code}`;
       const dataUrl = await loadImageAsDataURL(imgUrl);
 
-      // Ajout image (PNG) dans le PDF
+      // QR
       pdf.addImage(dataUrl, "PNG", x, y, qrMm, qrMm);
-      const label = "Assist by scan";
-      pdf.setFont("helvetica", "italic");
-      pdf.setFontSize(9);
-      pdf.text(label, x + qrMm / 2, y + qrMm + 4, { align: "center" });
 
+      // ✅ Texte WRAP (ne déborde plus, donc pas de fusion)
+      pdf.setFont("helvetica", "italic");
+      pdf.setFontSize(fontSize);
+
+      const lines = pdf.splitTextToSize(label, labelMaxWidth);
+      const textY = y + qrMm + labelTopGap + lineHeight; // première ligne
+      pdf.text(lines, x + qrMm / 2, textY, { align: "center" });
     }
 
     const filename = `QR_${application || "app"}_${sizeCm}cm_${Date.now()}.pdf`;
@@ -271,6 +288,7 @@ const exportQrsToA4Pdf = async (qrList, sizeCm) => {
     setErrorMsg("PDF export failed. Check CORS / image access.");
   }
 };
+;
 
   return (
     <div className="container--xl card card--panel">
@@ -351,7 +369,7 @@ const exportQrsToA4Pdf = async (qrList, sizeCm) => {
                   className="btn btn--primary"
                   onClick={() => exportQrsToA4Pdf(results, qrSize)}
                 >
-                  📄 Download A4 PDF
+                  Download A4 PDF
                 </button>
               </div>
               {/* Pagination haut */}
