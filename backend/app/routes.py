@@ -1201,7 +1201,7 @@ def send_ask_direct():
             (qr_code, application)
         )
         if cursor.fetchone():
-            return jsonify({'status': 'error', 'message': 'There is already an ongoing request for this QR code'}), 409
+            return jsonify({'status': 'error', 'message': 'QR code is active and currently under repair (Processing)'}), 409
         # 2) email tech -> username tech
         cursor.execute(
             "SELECT username FROM users WHERE email = %s AND application = %s",
@@ -1222,8 +1222,8 @@ def send_ask_direct():
         cursor = conn.cursor()  # simple tuple cursor pour lastrowid
         cursor.execute(
             """
-            INSERT INTO ask_repair (username, comment, qr_code, user_tech, application, date, hour_slot, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'processing')
+            INSERT INTO ask_repair (username, comment, qr_code, user_tech, application, date, hour_slot, status, intervention_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'processing', 'direct')
             """,
             (username, comment, qr_code, user_tech, application, calc_date, calc_slot)
         )
@@ -2573,9 +2573,12 @@ def get_repair_by_day():
             LEFT JOIN users u
                 ON u.username = ar.username
                AND u.application = ar.application
-            WHERE ar.application = %s
+            WHERE LOWER(ar.application) = %s
               AND ar.user_tech   = %s
-              AND ar.`date`      = %s
+              AND (
+                    (ar.intervention_type = 'indirect' AND ar.`date` = %s)
+                OR (ar.intervention_type = 'direct'  AND ar.status = 'processing')
+            )
             ORDER BY ar.hour_slot ASC, ar.id ASC
         """, (application, tech_username, date_str))
 
