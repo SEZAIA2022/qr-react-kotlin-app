@@ -13,14 +13,12 @@ def create_app():
     # ✅ Charger la config de base
     app.config.from_object(Config)
 
-    # ✅ Config upload vidéos help (APRÈS Config)
     app.config["UPLOAD_FOLDER_HELP_VIDEOS"] = os.environ.get(
         "UPLOAD_FOLDER_HELP_VIDEOS",
-        "/var/www/myapp/uploads/help_videos"
+        os.path.join(app.root_path, "static", "help_videos")  # => backend/app/static/help_videos
     )
 
-    # ✅ Limite upload Flask (300 MB)
-    app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024 
 
     # ✅ CORS
     CORS(app)

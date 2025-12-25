@@ -1,3 +1,4 @@
+// src/components/HelpPage.jsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
@@ -40,7 +41,6 @@ const HelpPage = () => {
   }, []);
 
   const fetchTasks = useCallback(async () => {
-    // évite les appels inutiles
     if (!application || application.trim() === "") return;
 
     setLoadingTasks(true);
@@ -51,9 +51,7 @@ const HelpPage = () => {
       });
       setTasks(res.data?.tasks || []);
     } catch (err) {
-      setError(
-        err?.response?.data?.error || err?.message || "Failed to load tasks."
-      );
+      setError(err?.response?.data?.error || err?.message || "Failed to load tasks.");
     } finally {
       setLoadingTasks(false);
     }
@@ -69,11 +67,8 @@ const HelpPage = () => {
       help: newHelp,
     });
 
-    // garder video_path si existant
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, title_help: newTitleHelp, help: newHelp } : t
-      )
+      prev.map((t) => (t.id === id ? { ...t, title_help: newTitleHelp, help: newHelp } : t))
     );
   };
 
@@ -101,14 +96,12 @@ const HelpPage = () => {
 
     setAddLoading(true);
     try {
-      // IMPORTANT:
-      // ton backend POST attend souvent application_name.
-      // on envoie les DEUX pour être compatible.
+      // compat ancien backend: application_name
       const res = await axios.post(`${API}/api/help_tasks`, {
         title_help: newTitle.trim(),
         help: newContent.trim(),
-        application, // pour tes nouveaux endpoints
-        application_name: application, // pour tes anciens endpoints
+        application,
+        application_name: application,
       });
 
       const task = res.data?.task || res.data;
@@ -120,8 +113,7 @@ const HelpPage = () => {
       setAdding(false);
     } catch (err) {
       setAddMessage(
-        "❌ Adding failed: " +
-          (err?.response?.data?.error || err?.message || "")
+        "❌ Adding failed: " + (err?.response?.data?.error || err?.message || "")
       );
     } finally {
       setAddLoading(false);
@@ -129,9 +121,7 @@ const HelpPage = () => {
   };
 
   const addMsgError = /^❌/.test(addMessage);
-  const addMsgClass = addMsgError
-    ? "message message--error"
-    : "message message--success";
+  const addMsgClass = addMsgError ? "message message--error" : "message message--success";
 
   return (
     <div className="container card card--panel">
@@ -151,9 +141,7 @@ const HelpPage = () => {
               onSave={updateTask}
               onDelete={deleteTask}
               onVideoUploaded={(id, video_path) => {
-                setTasks((prev) =>
-                  prev.map((t) => (t.id === id ? { ...t, video_path } : t))
-                );
+                setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, video_path } : t)));
               }}
             />
           ))}
@@ -189,11 +177,7 @@ const HelpPage = () => {
               disabled={addLoading}
             />
             <div className="btn-row">
-              <button
-                onClick={addTask}
-                className="btn btn--success"
-                disabled={addLoading}
-              >
+              <button onClick={addTask} className="btn btn--success" disabled={addLoading}>
                 💾 Add
               </button>
               <button
@@ -213,6 +197,45 @@ const HelpPage = () => {
           </div>
         )}
       </div>
+
+      {/* Minimal modal styles (si tu veux tu peux les déplacer dans ton CSS global) */}
+      <style>{`
+        .modal-overlay{
+          position:fixed; inset:0; background:rgba(0,0,0,0.55);
+          display:flex; align-items:center; justify-content:center;
+          z-index:9999; padding:12px;
+        }
+        .modal-card{
+          width:min(720px,100%); background:#fff; border-radius:14px;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.18);
+          padding:16px;
+        }
+        .modal-head{
+          display:flex; justify-content:space-between; align-items:center; gap:10px;
+          margin-bottom:10px;
+        }
+        .file-native{
+          display:flex; align-items:center; gap:10px;
+          border:1px solid rgba(0,0,0,0.12);
+          border-radius:10px;
+          padding:8px 10px;
+          background:#fff;
+        }
+        .file-native.is-disabled{ opacity:.6; pointer-events:none; }
+        .file-native__btn{
+          border:1px solid rgba(0,0,0,0.18);
+          background:#f7f7f7;
+          padding:6px 10px;
+          border-radius:8px;
+          cursor:pointer;
+          font-weight:600;
+        }
+        .file-native__text{
+          color:#555; font-size:14px;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+          max-width: 380px;
+        }
+      `}</style>
     </div>
   );
 };
@@ -228,7 +251,8 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
 
   const [showContent, setShowContent] = useState(false);
 
-  // upload video
+  // upload modal
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoFile, setVideoFile] = useState(null);
   const [videoUploading, setVideoUploading] = useState(false);
   const [videoMsg, setVideoMsg] = useState("");
@@ -240,10 +264,11 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
 
   const fullVideoUrl = useMemo(() => {
     if (!task.video_path) return "";
-    // si backend renvoie déjà un full URL, on le garde
     if (/^https?:\/\//i.test(task.video_path)) return task.video_path;
     return `${apiBase}${task.video_path}`;
   }, [task.video_path, apiBase]);
+
+  const hasVideo = !!fullVideoUrl;
 
   const handleSave = async () => {
     setMessage("");
@@ -257,9 +282,7 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
       setIsEditing(false);
       setMessage("✅ Task saved successfully.");
     } catch (err) {
-      setMessage(
-        "❌ Saving failed: " + (err?.response?.data?.error || err?.message || "")
-      );
+      setMessage("❌ Saving failed: " + (err?.response?.data?.error || err?.message || ""));
     } finally {
       setLoading(false);
     }
@@ -276,6 +299,19 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
 
   const toggleContent = () => {
     if (!isEditing) setShowContent((prev) => !prev);
+  };
+
+  const openVideoDialog = () => {
+    setVideoMsg("");
+    setVideoFile(null);
+    setVideoModalOpen(true);
+  };
+
+  const closeVideoDialog = () => {
+    if (videoUploading) return;
+    setVideoModalOpen(false);
+    setVideoMsg("");
+    setVideoFile(null);
   };
 
   const uploadVideo = async () => {
@@ -296,17 +332,18 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
       });
 
       const video_path = res.data?.video_url || res.data?.video_path;
-      if (video_path) {
-        onVideoUploaded(task.id, video_path);
-      }
+      if (video_path) onVideoUploaded(task.id, video_path);
 
-      setVideoFile(null);
       setVideoMsg("✅ Video uploaded.");
       setShowContent(true);
+
+      // fermer après succès
+      setTimeout(() => {
+        setVideoModalOpen(false);
+        setVideoFile(null);
+      }, 250);
     } catch (err) {
-      setVideoMsg(
-        "❌ Upload failed: " + (err?.response?.data?.error || err?.message || "")
-      );
+      setVideoMsg("❌ Upload failed: " + (err?.response?.data?.error || err?.message || ""));
     } finally {
       setVideoUploading(false);
     }
@@ -337,11 +374,7 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
             <button onClick={handleSave} className="btn btn--success" disabled={loading}>
               💾 Save
             </button>
-            <button
-              onClick={() => setIsEditing(false)}
-              className="btn btn--danger"
-              disabled={loading}
-            >
+            <button onClick={() => setIsEditing(false)} className="btn btn--danger" disabled={loading}>
               ❌ Cancel
             </button>
           </div>
@@ -364,7 +397,7 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
               <p className="task__content">{content}</p>
 
               {/* VIDEO VIEW */}
-              {fullVideoUrl && (
+              {hasVideo && (
                 <div className="mt-10">
                   <video controls style={{ width: "100%", maxHeight: 360 }}>
                     <source src={fullVideoUrl} />
@@ -372,55 +405,13 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
                 </div>
               )}
 
-              {/* VIDEO UPLOAD */}
+              {/* VIDEO ACTION (upload/modify) */}
               <div className="mt-10">
-                <label className="label" style={{ display: "block", marginBottom: 6 }}>
-                  Upload a video (from your PC)
-                </label>
-
-                <input
-                  id={inputId}
-                  type="file"
-                  accept="video/*"
-                  onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                  disabled={videoUploading}
-                  style={{ position: "absolute", left: "-9999px" }}
-                />
-
-                <div className={`file-native ${videoUploading ? "is-disabled" : ""}`}>
-                  <button
-                    type="button"
-                    className="file-native__btn"
-                    onClick={() => document.getElementById(inputId)?.click()}
-                    disabled={videoUploading}
-                  >
-                    Choose file
-                  </button>
-
-                  <span className="file-native__text">
-                    {videoFile ? videoFile.name : "No file selected"}
-                  </span>
-                </div>
-
                 <div className="btn-row" style={{ marginTop: 10 }}>
-                  <button
-                    className="btn btn--success"
-                    onClick={uploadVideo}
-                    disabled={!videoFile || videoUploading}
-                  >
-                    {videoUploading ? "Uploading..." : "Upload"}
+                  <button className="btn btn--primary" onClick={openVideoDialog}>
+                    {hasVideo ? "Change video" : "Upload video"}
                   </button>
                 </div>
-
-                {videoMsg && (
-                  <p
-                    className={
-                      /^❌/.test(videoMsg) ? "message message--error" : "message message--success"
-                    }
-                  >
-                    {videoMsg}
-                  </p>
-                )}
               </div>
             </>
           )}
@@ -437,6 +428,64 @@ const HelpTaskItem = ({ task, apiBase, onSave, onDelete, onVideoUploaded }) => {
       )}
 
       {message && <p className={msgClass}>{message}</p>}
+
+      {/* VIDEO MODAL */}
+      {videoModalOpen && (
+        <div className="modal-overlay" onClick={closeVideoDialog}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 style={{ margin: 0 }}>{hasVideo ? "Change video" : "Upload video"}</h3>
+              <button className="btn btn--danger btn--sm" onClick={closeVideoDialog} disabled={videoUploading}>
+                ✖ Close
+              </button>
+            </div>
+
+            <p className="muted" style={{ marginTop: 0 }}>
+              {hasVideo ? "Choose a new video to replace the existing one." : "Choose a video from your PC."}
+            </p>
+
+            <input
+              id={inputId}
+              type="file"
+              accept="video/*"
+              onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+              disabled={videoUploading}
+              style={{ position: "absolute", left: "-9999px" }}
+            />
+
+            <div className={`file-native ${videoUploading ? "is-disabled" : ""}`}>
+              <button
+                type="button"
+                className="file-native__btn"
+                onClick={() => document.getElementById(inputId)?.click()}
+                disabled={videoUploading}
+              >
+                Choose file
+              </button>
+
+              <span className="file-native__text">
+                {videoFile ? videoFile.name : "No file selected"}
+              </span>
+            </div>
+
+            <div className="btn-row" style={{ marginTop: 12 }}>
+              <button
+                className="btn btn--success"
+                onClick={uploadVideo}
+                disabled={!videoFile || videoUploading}
+              >
+                {videoUploading ? "Uploading..." : hasVideo ? "Replace" : "Upload"}
+              </button>
+            </div>
+
+            {videoMsg && (
+              <p className={/^❌/.test(videoMsg) ? "message message--error" : "message message--success"}>
+                {videoMsg}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

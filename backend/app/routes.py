@@ -4,12 +4,13 @@ import smtplib
 import string
 import mysql.connector
 import os
-import time as time_module
+
 import json
 import random
 import re
 from decimal import Decimal
 from datetime import datetime, timedelta, date
+import time as time_module
 from mysql.connector.errors import IntegrityError  
 import firebase_admin
 from firebase_admin import messaging, credentials
@@ -59,11 +60,13 @@ ALLOWED_VIDEO_EXT = {"mp4", "webm", "ogg", "mov", "m4v"}
 def allowed_video(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_VIDEO_EXT
 
-# ✅ servir les vidéos via le blueprint (pas app.route)
+
 @bp.route("/uploads/help_videos/<path:filename>")
 def serve_help_video(filename):
+    # IMPORTANT: current_app (pas app)
     folder = current_app.config["UPLOAD_FOLDER_HELP_VIDEOS"]
     return send_from_directory(folder, filename)
+
 
 @bp.route("/help_tasks/<int:task_id>/video", methods=["POST"])
 def upload_help_task_video(task_id):
@@ -77,38 +80,58 @@ def upload_help_task_video(task_id):
     if not allowed_video(f.filename):
         return jsonify({"error": "Invalid video format. Allowed: mp4, webm, ogg, mov, m4v"}), 400
 
-    # Vérifier que la task existe
+    folder = current_app.config["UPLOAD_FOLDER_HELP_VIDEOS"]
+    os.makedirs(folder, exist_ok=True)
+
+    # Vérifier que la task existe + récupérer ancienne video_path
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT id, video_path FROM help_tasks WHERE id=%s", (task_id,))
     task = cursor.fetchone()
+
     if not task:
-        cursor.close(); conn.close()
+        cursor.close()
+        conn.close()
         return jsonify({"error": "Help task not found"}), 404
 
-    # Enregistrer fichier (nom unique)
-    safe_name = secure_filename(f.filename)
-    ext = safe_name.rsplit(".", 1)[1].lower()
-    filename = f"task_{task_id}_{int(time_module.time())}.{ext}"
-
-
-    folder = current_app.config["UPLOAD_FOLDER_HELP_VIDEOS"]
-    os.makedirs(folder, exist_ok=True)
-    save_path = os.path.join(folder, filename)
-    f.save(save_path)
-
-    video_url = f"/uploads/help_videos/{filename}"
-
-    # supprimer ancienne vidéo si existe
+    # --- supprimer l'ancienne vidéo (avant de mettre la nouvelle) ---
     old = (task.get("video_path") or "").strip()
-    if old.startswith("/uploads/help_videos/"):
-        old_name = old.split("/uploads/help_videos/", 1)[1]
+    if old:
+        # cas 1: old = "/uploads/help_videos/xxx.mp4"
+        if old.startswith("/uploads/help_videos/"):
+            old_name = old.split("/uploads/help_videos/", 1)[1]
+        else:
+            # cas 2: old = "xxx.mp4"
+            old_name = old
+
         old_path = os.path.join(folder, old_name)
         try:
             if os.path.exists(old_path):
                 os.remove(old_path)
-        except:
+        except Exception:
             pass
+
+    # --- sauvegarder nouvelle vidéo ---
+    safe_name = secure_filename(f.filename)
+    ext = safe_name.rsplit(".", 1)[1].lower()
+    filename = f"task_{task_id}_{int(time_module.time())}.{ext}"
+
+    folder = current_app.config["UPLOAD_FOLDER_HELP_VIDEOS"]
+    os.makedirs(folder, exist_ok=True)
+
+    # supprimer toutes les anciennes vidéos SAUF celle-ci
+    for name in os.listdir(folder):
+        if name.startswith(f"task_{task_id}_") and name != filename:
+            try:
+                os.remove(os.path.join(folder, name))
+            except:
+                pass
+
+    save_path = os.path.join(folder, filename)
+    f.save(save_path)
+
+    # url servie par Flask
+    video_url = f"/api/uploads/help_videos/{filename}"  # <= garde /api si ton blueprint est /api
 
     # update DB
     cursor2 = conn.cursor()
